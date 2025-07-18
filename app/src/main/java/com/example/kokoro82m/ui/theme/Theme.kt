@@ -5,6 +5,7 @@ import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.platform.LocalContext
+import com.example.kokoro82m.ui.theme.AppTypography
 
 @Composable
 fun KokoroTheme(
@@ -23,7 +24,7 @@ fun KokoroTheme(
 
     MaterialTheme(
         colorScheme = colorScheme,
-        typography = androidx.compose.material3.Typography(),
+        typography = AppTypography,
         content = content
     )
 }

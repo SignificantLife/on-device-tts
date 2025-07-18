@@ -56,6 +56,7 @@ import com.example.kokoro82m.utils.createAudioFromStyleVector
 import com.example.kokoro82m.utils.mixStyles
 import com.example.kokoro82m.utils.saveAudio
 import com.example.kokoro82m.utils.SettingsManager
+import com.example.kokoro82m.utils.BookmarkManager
 import com.example.kokoro82m.utils.DebugLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.CoroutineScope
@@ -74,6 +75,8 @@ fun BookScreen(
     var lines by remember { mutableStateOf<List<String>>(emptyList()) }
     var currentLine by remember { mutableIntStateOf(-1) }
     var isPlaying by remember { mutableStateOf(false) }
+    var bookUri by remember { mutableStateOf<Uri?>(null) }
+    var bookmarkLine by remember { mutableIntStateOf(-1) }
     val audioPlayer = remember { AudioPlayer() }
     val styleLoader = remember { StyleLoader(context) }
     var selectedStyles by remember { mutableStateOf(listOf("af_sarah")) }
@@ -86,9 +89,12 @@ fun BookScreen(
         contract = ActivityResultContracts.OpenDocument()
     ) { uri: Uri? ->
         uri?.let {
+            bookUri = it
             scope.launch {
                 val text = readTextFromUri(context, it)
                 lines = text.lines()
+                bookmarkLine = BookmarkManager.load(context, it.toString())
+                currentLine = bookmarkLine
             }
         }
     }
@@ -136,6 +142,25 @@ fun BookScreen(
             steps = 5,
             modifier = Modifier.fillMaxWidth()
         )
+
+        if (bookmarkLine >= 0 && !isPlaying) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text("Resume at line ${bookmarkLine + 1}")
+                Button(onClick = { currentLine = bookmarkLine }) {
+                    Text("Go")
+                }
+                Button(onClick = {
+                    bookUri?.let { BookmarkManager.clear(context, it.toString()) }
+                    bookmarkLine = -1
+                    currentLine = -1
+                }) {
+                    Text("Clear")
+                }
+            }
+        }
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -147,9 +172,10 @@ fun BookScreen(
                 onClick = {
                     if (isPlaying) {
                         audioPlayer.pause()
+                        bookUri?.let { BookmarkManager.save(context, it.toString(), currentLine) }
                         isPlaying = false
                     } else {
-                        if (currentLine == -1 && lines.isNotEmpty()) {
+                        if (lines.isNotEmpty()) {
                             try {
                                 debugMessage = null
                                 playBook(
@@ -161,11 +187,20 @@ fun BookScreen(
                                     mode = interpolationMode,
                                     speed = speed,
                                     lines = lines,
+                                    startLine = currentLine.coerceAtLeast(0),
+                                    bookUri = bookUri,
                                     audioPlayer = audioPlayer,
                                     context = context,
                                     scope = scope,
-                                    onLineChanged = { currentLine = it },
-                                    onFinished = { isPlaying = false }
+                                    onLineChanged = {
+                                        currentLine = it
+                                        bookUri?.let { u -> BookmarkManager.save(context, u.toString(), it) }
+                                    },
+                                    onFinished = {
+                                        isPlaying = false
+                                        bookUri?.let { u -> BookmarkManager.clear(context, u.toString()) }
+                                        bookmarkLine = -1
+                                    }
                                 )
                             } catch (e: Exception) {
                                 debugMessage = e.localizedMessage
@@ -250,6 +285,8 @@ private fun playBook(
     mode: InterpolationMode,
     speed: Float,
     lines: List<String>,
+    startLine: Int,
+    bookUri: Uri?,
     audioPlayer: AudioPlayer,
     context: Context,
     scope: kotlinx.coroutines.CoroutineScope,
@@ -264,8 +301,10 @@ private fun playBook(
                 weights = weights,
                 mode = mode
             )
-            for ((index, line) in lines.withIndex()) {
+            for (index in startLine until lines.size) {
                 onLineChanged(index)
+                bookUri?.let { BookmarkManager.save(context, it.toString(), index) }
+                val line = lines[index]
                 val phonemes = phonemeConverter.phonemize(line)
                 val (audio, _) = createAudioFromStyleVector(
                     phonemes = phonemes,
@@ -277,6 +316,7 @@ private fun playBook(
                 audioPlayer.play()
             }
             onLineChanged(-1)
+            bookUri?.let { BookmarkManager.clear(context, it.toString()) }
             withContext(Dispatchers.Main) { onFinished() }
         } catch (e: Exception) {
             DebugLogger.log("playBook failed: ${e.localizedMessage}")
