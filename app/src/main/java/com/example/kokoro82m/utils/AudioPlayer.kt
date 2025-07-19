@@ -8,6 +8,9 @@ import com.example.kokoro82m.utils.DebugLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.isActive
+import kotlin.coroutines.coroutineContext
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -82,6 +85,30 @@ class AudioPlayer(
         }
     }
 
+    suspend fun playBlocking() {
+        val track = audioTrack ?: return
+        val data = pcmData ?: return
+
+        if (currentState == PlayerState.PAUSED) {
+            resume()
+            return
+        }
+
+        withContext(Dispatchers.IO) {
+            DebugLogger.log("AudioPlayer start play blocking")
+            currentState = PlayerState.PLAYING
+            track.play()
+            while (position < data.size && currentState == PlayerState.PLAYING && coroutineContext.isActive) {
+                val written = track.write(data, position, data.size - position)
+                if (written <= 0) break
+                position += written
+            }
+            if (currentState != PlayerState.PAUSED) {
+                stop()
+            }
+        }
+    }
+
     fun pause() {
         if (currentState == PlayerState.PLAYING) {
             audioTrack?.pause()
@@ -115,4 +142,6 @@ class AudioPlayer(
     }
 
     fun isPlaying(): Boolean = currentState == PlayerState.PLAYING
+
+    fun getState(): PlayerState = currentState
 }

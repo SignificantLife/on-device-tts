@@ -10,6 +10,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
@@ -47,6 +48,8 @@ fun BookScreen(
 
     var playJob by remember { mutableStateOf<Job?>(null) }
 
+    val listState = rememberLazyListState()
+
     val styleLoader = remember { StyleLoader(context) }
     var selectedStyles by remember { mutableStateOf(listOf("af_sarah")) }
     var weights by remember { mutableStateOf(mapOf("af_sarah" to 1f)) }
@@ -67,7 +70,15 @@ fun BookScreen(
             bookmarkLine = BookmarkManager.load(context, it.toString())
             if (bookmarkLine != -1) {
                 bookViewModel.setCurrentLine(bookmarkLine)
+            } else {
+                bookViewModel.setCurrentLine(0)
             }
+        }
+    }
+
+    LaunchedEffect(currentLine) {
+        if (currentLine >= 0) {
+            listState.animateScrollToItem(currentLine)
         }
     }
 
@@ -75,7 +86,8 @@ fun BookScreen(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+        state = listState
     ) {
         item {
             StyleSelector(
@@ -198,7 +210,10 @@ fun BookScreen(
                     )
                 }
                 Button(
-                    onClick = { bookViewModel.audioPlayer.stop() },
+                    onClick = {
+                        bookViewModel.audioPlayer.stop()
+                        playJob?.cancel()
+                    },
                     enabled = playerState != PlayerState.IDLE,
                     modifier = Modifier.weight(1f)
                 ) {
@@ -226,7 +241,8 @@ fun BookScreen(
                                     )
                                     audioData.addAll(audio.toList())
                                 }
-                                saveAudio(audioData.toFloatArray(), context)
+                                val fileName = buildStyleFileName(selectedStyles, weights, interpolationMode)
+                                saveAudio(audioData.toFloatArray(), context, fileName)
                             } catch (e: Exception) {
                                 withContext(Dispatchers.Main) {
                                     debugMessage = e.localizedMessage
@@ -312,6 +328,7 @@ private fun playBook(
     onFinished: () -> Unit
 ): Job {
     return scope.launch(Dispatchers.IO) {
+        var completed = true
         try {
             val mixedVector = mixStyles(
                 styleLoader = styleLoader,
@@ -320,9 +337,9 @@ private fun playBook(
                 mode = mode
             )
             for (index in startLine until lines.size) {
-                if (!audioPlayer.isPlaying()) {
-                    // This check is tricky now. The loop should be controlled by the player state.
-                    // For now, we assume the loop breaks when stop is called.
+                if (audioPlayer.getState() == PlayerState.IDLE) {
+                    completed = false
+                    break
                 }
                 withContext(Dispatchers.Main) {
                     onLineChanged(index)
@@ -337,14 +354,18 @@ private fun playBook(
                     session = session
                 )
                 audioPlayer.prepare(audio)
-                audioPlayer.play() // This is now a suspend function that waits until done or stopped
-            }
-            withContext(Dispatchers.Main) {
-                onLineChanged(-1)
-                onFinished()
+                audioPlayer.playBlocking()
             }
         } catch (e: Exception) {
+            completed = false
             DebugLogger.log("playBook failed: ${e.localizedMessage}")
+        } finally {
+            withContext(Dispatchers.Main) {
+                onLineChanged(-1)
+                if (completed) {
+                    onFinished()
+                }
+            }
         }
     }
 }
