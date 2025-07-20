@@ -65,13 +65,20 @@ fun BookScreen(
     }
 
     LaunchedEffect(bookUri) {
-        bookUri?.let {
-            bookmark = BookmarkManager.load(context, it.toString())
-            DebugLogger.log("Loaded bookmark: $bookmark")
-            bookmark?.let {
-                bookViewModel.setCurrentLine(it.line)
-            } ?: run {
-                bookViewModel.setCurrentLine(0)
+        bookUri?.let { uri ->
+            val project = ProjectManager.load(context, uri.toString())
+            if (project != null) {
+                selectedStyles = project.styles.ifEmpty { listOf("af_sarah") }
+                weights = if (project.weights.isNotEmpty()) project.weights else mapOf("af_sarah" to 1f)
+                interpolationMode = project.mode
+                speed = project.speed
+                bookmark = project.bookmark
+                DebugLogger.log("Loaded project: $project")
+                bookViewModel.setCurrentLine(project.bookmark?.line ?: 0)
+            } else {
+                bookmark = BookmarkManager.load(context, uri.toString())
+                DebugLogger.log("Loaded bookmark: $bookmark")
+                bookmark?.let { bookViewModel.setCurrentLine(it.line) } ?: bookViewModel.setCurrentLine(0)
             }
         }
     }
@@ -174,6 +181,15 @@ fun BookScreen(
                                 val position = bookViewModel.audioPlayer.getPosition()
                                 DebugLogger.log("Saving bookmark at line $currentLine, position $position")
                                 BookmarkManager.save(context, it.toString(), currentLine, position)
+                                val project = Project(
+                                    uri = it.toString(),
+                                    styles = selectedStyles,
+                                    weights = weights,
+                                    mode = interpolationMode,
+                                    speed = speed,
+                                    bookmark = Bookmark(currentLine, position)
+                                )
+                                ProjectManager.save(context, project)
                             }
                         } else {
                             bookViewModel.startPlayback(
@@ -256,6 +272,24 @@ fun BookScreen(
                     modifier = Modifier.weight(1f)
                 ) {
                     Text(if (isProcessing) "Saving..." else "Save")
+                }
+                Button(
+                    onClick = {
+                        bookUri?.let {
+                            val project = Project(
+                                uri = it.toString(),
+                                styles = selectedStyles,
+                                weights = weights,
+                                mode = interpolationMode,
+                                speed = speed,
+                                bookmark = bookmark
+                            )
+                            ProjectManager.save(context, project)
+                        }
+                    },
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Text("Save Project")
                 }
             }
         }
