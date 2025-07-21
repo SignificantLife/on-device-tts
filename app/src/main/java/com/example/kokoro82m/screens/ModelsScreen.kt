@@ -1,0 +1,106 @@
+package com.example.kokoro82m.screens
+
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextField
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.unit.dp
+import com.example.kokoro82m.data.Model
+import com.example.kokoro82m.data.ModelDownloader
+import com.example.kokoro82m.data.ModelManager
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun ModelsScreen() {
+    val context = LocalContext.current
+    val modelManager = remember { ModelManager(context) }
+    val modelDownloader = remember { ModelDownloader(context) }
+    val models = modelManager.models
+
+    var showDialog by remember { mutableStateOf(false) }
+    var selectedModel by remember { mutableStateOf<Model?>(null) }
+    var hfToken by remember { mutableStateOf("") }
+
+    if (showDialog) {
+        AlertDialog(
+            onDismissRequest = { showDialog = false },
+            title = { Text("Hugging Face Token") },
+            text = {
+                Column {
+                    Text("This model is gated. Please enter your Hugging Face token to download.")
+                    TextField(
+                        value = hfToken,
+                        onValueChange = { hfToken = it },
+                        label = { Text("Token") }
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        selectedModel?.let {
+                            modelDownloader.downloadModel(it, hfToken)
+                        }
+                        showDialog = false
+                    }
+                ) {
+                    Text("Download")
+                }
+            },
+            dismissButton = {
+                Button(onClick = { showDialog = false }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    LazyColumn(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        items(models) { model ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column {
+                    Text(text = model.name, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                    Text(text = model.description, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
+                }
+                if (model.isDownloaded) {
+                    Text("Downloaded")
+                } else {
+                    Button(onClick = {
+                        if (model.gated) {
+                            selectedModel = model
+                            showDialog = true
+                        } else {
+                            modelDownloader.downloadModel(model)
+                        }
+                    }) {
+                        Text("Download")
+                    }
+                }
+            }
+        }
+    }
+}

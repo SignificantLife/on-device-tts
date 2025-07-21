@@ -85,6 +85,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:$lifecycle_version")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:$lifecycle_version")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:$lifecycle_version")
+
+    val work_version = "2.9.0"
+    implementation("androidx.work:work-runtime-ktx:$work_version")
 }
 
 tasks.withType<JavaCompile> {

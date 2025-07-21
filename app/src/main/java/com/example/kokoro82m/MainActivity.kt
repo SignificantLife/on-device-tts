@@ -6,6 +6,7 @@ import com.example.kokoro82m.screens.CreationsScreen
 import com.example.kokoro82m.screens.SettingsScreen
 import com.example.kokoro82m.screens.MixerScreen
 import com.example.kokoro82m.screens.MoreScreen
+import com.example.kokoro82m.screens.ModelsScreen
 import com.example.kokoro.ui.ChatScreen
 import com.example.kokoro.galleryport.PerfHud
 import ai.onnxruntime.OrtSession
@@ -188,6 +189,7 @@ sealed class Screen(val title: String) {
     object Creations : Screen("Creations")
     object Settings : Screen("Settings")
     object About : Screen("About this app")
+    object Models : Screen("Models")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -199,6 +201,8 @@ fun MainScreen(
 ) {
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Basic) }
     var hudEnabled by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val viewModel: MainViewModel = viewModel { MainViewModel(context) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
@@ -253,27 +257,29 @@ fun MainScreen(
     ) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding)) {
             when (currentScreen) {
-                Screen.Basic -> BasicScreen(session = session, onGenerateAudio)
+                Screen.Basic -> BasicScreen(session = session, onGenerateAudio = onGenerateAudio, viewModel = viewModel)
                 Screen.Mixer -> MixerScreen(
                     session = session,
                     phonemeConverter = phonemeConverter,
-                    styleLoader = StyleLoader(LocalContext.current)
+                    styleLoader = StyleLoader(context)
                 )
                 Screen.Book -> BookScreen(
                     session = session,
                     phonemeConverter = phonemeConverter
                 )
-                Screen.Chat -> ChatScreen(LocalContext.current, hudEnabled)
+                Screen.Chat -> ChatScreen(context, hudEnabled)
                 Screen.More -> MoreScreen { screen ->
                     currentScreen = when (screen) {
                         "Creations" -> Screen.Creations
                         "Settings" -> Screen.Settings
+                        "Models" -> Screen.Models
                         else -> currentScreen
                     }
                 }
                 Screen.Creations -> CreationsScreen()
                 Screen.Settings -> SettingsScreen()
                 Screen.About -> AboutScreen()
+                Screen.Models -> ModelsScreen()
             }
         }
     }
@@ -283,7 +289,8 @@ fun MainScreen(
 @Composable
 fun BasicScreen(
     session: OrtSession,
-    onGenerateAudio: (String, String, Float, Boolean, () -> Unit) -> Unit
+    onGenerateAudio: (String, String, Float, Boolean, () -> Unit) -> Unit,
+    viewModel: MainViewModel
 ) {
     val context = LocalContext.current
     var text by remember { mutableStateOf("This is her warm heart, her warmest kokoro, unwavering love and comfort.") }
@@ -291,6 +298,17 @@ fun BasicScreen(
     var speed by remember { mutableFloatStateOf(SettingsManager.getSpeed(context)) }
     var isProcessing by remember { mutableStateOf(false) }
     var shouldSaveFile by remember { mutableStateOf(false) }
+
+    val modelManager = remember { com.example.kokoro82m.data.ModelManager(context) }
+    val models = remember { modelManager.models.filter { it.isDownloaded } }
+    var selectedModel by remember { mutableStateOf(models.firstOrNull()) }
+
+    LaunchedEffect(selectedModel) {
+        selectedModel?.let {
+            val modelFile = java.io.File(context.filesDir, "models/${it.id}.task")
+            viewModel.reinitializeSession(modelFile.absolutePath)
+        }
+    }
 
     val names = listOf(
         "af",
@@ -306,6 +324,7 @@ fun BasicScreen(
         "bm_lewis"
     )
     var expanded by remember { mutableStateOf(false) }
+    var modelExpanded by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -324,6 +343,40 @@ fun BasicScreen(
                 keyboardType = KeyboardType.Text
             )
         )
+
+        ExposedDropdownMenuBox(
+            expanded = modelExpanded,
+            onExpandedChange = { modelExpanded = !modelExpanded },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            TextField(
+                value = selectedModel?.name ?: "Select a model",
+                onValueChange = { },
+                label = { Text("Model") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(),
+                readOnly = true,
+                trailingIcon = {
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelExpanded)
+                }
+            )
+
+            ExposedDropdownMenu(
+                expanded = modelExpanded,
+                onDismissRequest = { modelExpanded = false }
+            ) {
+                models.forEach { model ->
+                    DropdownMenuItem(
+                        text = { Text(model.name) },
+                        onClick = {
+                            selectedModel = model
+                            modelExpanded = false
+                        }
+                    )
+                }
+            }
+        }
 
         ExposedDropdownMenuBox(
             expanded = expanded,

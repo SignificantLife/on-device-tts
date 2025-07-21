@@ -8,9 +8,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.kokoro82m.R
 import kotlinx.coroutines.launch
-import java.io.InputStream
+import java.io.File
 
-class MainViewModel(context: Context) : ViewModel() {
+class MainViewModel(private val context: Context) : ViewModel() {
     init {
         viewModelScope.launch {
             OnnxRuntimeManager.initialize(context.applicationContext)
@@ -18,6 +18,12 @@ class MainViewModel(context: Context) : ViewModel() {
     }
 
     fun getSession() = OnnxRuntimeManager.getSession()
+
+    fun reinitializeSession(modelPath: String) {
+        viewModelScope.launch {
+            OnnxRuntimeManager.reinitialize(context, modelPath)
+        }
+    }
 }
 
 object OnnxRuntimeManager {
@@ -25,11 +31,21 @@ object OnnxRuntimeManager {
     private var session: OrtSession? = null
 
     @Synchronized
-    fun initialize(context: Context) {
+    fun initialize(context: Context, modelPath: String? = null) {
         if (environment == null) {
             environment = OrtEnvironment.getEnvironment()
-            session = createSession(context)
         }
+        session = if (modelPath != null) {
+            createSession(modelPath)
+        } else {
+            createSession(context)
+        }
+    }
+
+    @Synchronized
+    fun reinitialize(context: Context, modelPath: String) {
+        session?.close()
+        initialize(context, modelPath)
     }
 
     private fun createSession(context: Context): OrtSession {
@@ -44,5 +60,17 @@ object OnnxRuntimeManager {
         }
     }
 
+    private fun createSession(modelPath: String): OrtSession {
+        val options = SessionOptions().apply {
+            addConfigEntry("nnapi.flags", "USE_FP16")
+            addConfigEntry("nnapi.use_gpu", "true")
+            addConfigEntry("nnapi.gpu_precision_loss_allowed", "true")
+        }
+        val modelBytes = File(modelPath).readBytes()
+        return environment!!.createSession(modelBytes, options)
+    }
+
+
     fun getSession() = requireNotNull(session) { "ONNX Session not initialized" }
 }
+
