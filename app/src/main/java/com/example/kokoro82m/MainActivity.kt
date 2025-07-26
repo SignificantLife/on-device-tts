@@ -7,11 +7,11 @@ import com.example.kokoro82m.screens.SettingsScreen
 import com.example.kokoro82m.screens.MixerScreen
 import com.example.kokoro82m.screens.MoreScreen
 import com.example.kokoro82m.screens.ModelsScreen
-import com.example.kokoro.ui.ChatScreen
 import com.example.kokoro.galleryport.PerfHud
 import ai.onnxruntime.OrtSession
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -205,7 +205,7 @@ fun MainScreen(
     userPreferencesRepository: UserPreferencesRepository
 ) {
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Basic) }
-    var hudEnabled by remember { mutableStateOf(false) }
+    var hudEnabled by remember { mutableState of(false) }
     val context = LocalContext.current
     val viewModel: MainViewModel = viewModel { MainViewModel(context) }
 
@@ -243,7 +243,9 @@ fun MainScreen(
                     icon = { Icon(Icons.Default.Info, contentDescription = "Chat") },
                     label = { Text("Chat") },
                     selected = currentScreen == Screen.Chat,
-                    onClick = { currentScreen = Screen.Chat }
+                    onClick = {
+                        context.startActivity(Intent(context, ChatActivity::class.java))
+                    }
                 )
                 NavigationBarItem(
                     icon = { Icon(Icons.Default.Info, contentDescription = "About") },
@@ -272,7 +274,9 @@ fun MainScreen(
                     session = session,
                     phonemeConverter = phonemeConverter
                 )
-                Screen.Chat -> ChatScreen(context, hudEnabled)
+                Screen.Chat -> {
+                    // No-op, handled by onClick
+                }
                 Screen.More -> MoreScreen { screen ->
                     currentScreen = when (screen) {
                         "Creations" -> Screen.Creations

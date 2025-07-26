@@ -20,6 +20,11 @@ This document summarizes the work done to integrate a chat feature into the Koko
     - The `app/build.gradle.kts` file was updated to include a dependency on the `app-chat` module.
     - The `AndroidManifest.xml` was updated to include the new `ChatActivity`.
 
+## Refactoring
+
+- **Launched `ChatActivity` via Intent:** The `MainActivity` was updated to launch the `ChatActivity` using an `Intent` when the user clicks on the "Chat" navigation item. This decouples the chat feature from the main screen.
+- **Removed Redundant Code:** The `ChatScreen` Composable and related files (`LlmController.kt`, `PerfHud.kt`) were deleted from the `app` module, as their functionality is now encapsulated within the `app-chat` module.
+
 ## Next Steps
 
 - The `gemma-2b-it-cpu-int4.bin` model needs to be downloaded and placed in the application's cache directory. The `LlmInference.getModelFile()` method currently contains a placeholder for this.
