@@ -44,6 +44,13 @@ android {
 }
 
 dependencies {
+    implementation(project(":app-chat"))
+    implementation("com.google.ai.edge.litert:litert:1.0.1")
+    runtimeOnly("com.google.ai.edge.litert:litert-gpu:1.0.1")
+    implementation("com.google.mediapipe:tasks-core:latest.release")
+    implementation("com.google.mediapipe:tasks-genai:latest.release")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -79,6 +86,10 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:$lifecycle_version")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:$lifecycle_version")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:$lifecycle_version")
+
+    val work_version = "2.9.0"
+    implementation("androidx.work:work-runtime-ktx:$work_version")
+    implementation("androidx.datastore:datastore-preferences:1.1.1")
 }
 
 tasks.withType<JavaCompile> {

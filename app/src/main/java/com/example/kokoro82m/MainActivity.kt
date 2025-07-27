@@ -6,9 +6,12 @@ import com.example.kokoro82m.screens.CreationsScreen
 import com.example.kokoro82m.screens.SettingsScreen
 import com.example.kokoro82m.screens.MixerScreen
 import com.example.kokoro82m.screens.MoreScreen
+import com.example.kokoro82m.screens.ModelsScreen
+import com.example.kokoro.galleryport.PerfHud
 import ai.onnxruntime.OrtSession
 import android.app.Application
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -41,6 +44,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.CenterAlignedTopAppBar
+import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -54,6 +58,7 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.kokoro82m.data.UserPreferencesRepository
 import com.example.kokoro82m.screens.Acknowledgements
 import com.example.kokoro82m.utils.MainViewModel
 import com.example.kokoro82m.utils.PhonemeConverter
@@ -81,11 +86,13 @@ class MyApplication : Application() {
 class MainActivity : ComponentActivity() {
     private lateinit var phonemeConverter: PhonemeConverter
     private val scope = MainScope()
+    private lateinit var userPreferencesRepository: UserPreferencesRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         DebugLogger.initialize(this)
         enableEdgeToEdge()
+        userPreferencesRepository = UserPreferencesRepository(this)
 
         setContent {
             KokoroTheme {
@@ -111,7 +118,8 @@ class MainActivity : ComponentActivity() {
                             shouldSave,
                             onComplete
                         )
-                    }
+                    },
+                    userPreferencesRepository = userPreferencesRepository
                 )
             }
         }
@@ -145,10 +153,15 @@ private fun generateAudio(
             }
 
 
-            val (audioData, sampleRate) = createAudio(
-                voice = style, phonemes = phonemes, speed = speed, context = context,
-                session = session
-            )
+            val (audioData, sampleRate) = PerfHud.record("ONNX synth") {
+                createAudio(
+                    voice = style,
+                    phonemes = phonemes,
+                    speed = speed,
+                    context = context,
+                    session = session
+                )
+            }
 
             playAudio(
                 audioData, scope,
@@ -175,10 +188,12 @@ sealed class Screen(val title: String) {
     object Basic : Screen("Basic TTS")
     object Mixer : Screen("Mixer")
     object Book : Screen("Audio Book")
+    object Chat : Screen("Chat")
     object More : Screen("More")
     object Creations : Screen("Creations")
     object Settings : Screen("Settings")
     object About : Screen("About this app")
+    object Models : Screen("Models")
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -186,15 +201,22 @@ sealed class Screen(val title: String) {
 fun MainScreen(
     session: OrtSession,
     phonemeConverter: PhonemeConverter,
-    onGenerateAudio: (String, String, Float, Boolean, () -> Unit) -> Unit
+    onGenerateAudio: (String, String, Float, Boolean, () -> Unit) -> Unit,
+    userPreferencesRepository: UserPreferencesRepository
 ) {
     var currentScreen by remember { mutableStateOf<Screen>(Screen.Basic) }
+    var hudEnabled by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val viewModel: MainViewModel = viewModel { MainViewModel(context) }
 
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         topBar = {
             CenterAlignedTopAppBar(
-                title = { Text(currentScreen.title) }
+                title = { Text(currentScreen.title) },
+                actions = {
+                    Switch(checked = hudEnabled, onCheckedChange = { checked -> hudEnabled = checked })
+                }
             )
         },
         bottomBar = {
@@ -218,6 +240,14 @@ fun MainScreen(
                     onClick = { currentScreen = Screen.Book }
                 )
                 NavigationBarItem(
+                    icon = { Icon(Icons.Default.Info, contentDescription = "Chat") },
+                    label = { Text("Chat") },
+                    selected = currentScreen == Screen.Chat,
+                    onClick = {
+                        context.startActivity(Intent(context, ChatActivity::class.java))
+                    }
+                )
+                NavigationBarItem(
                     icon = { Icon(Icons.Default.Info, contentDescription = "About") },
                     label = { Text("About") },
                     selected = currentScreen == Screen.About,
@@ -234,26 +264,31 @@ fun MainScreen(
     ) { innerPadding ->
         Box(modifier = Modifier.padding(innerPadding)) {
             when (currentScreen) {
-                Screen.Basic -> BasicScreen(session = session, onGenerateAudio)
+                Screen.Basic -> BasicScreen(session = session, onGenerateAudio = onGenerateAudio, viewModel = viewModel)
                 Screen.Mixer -> MixerScreen(
                     session = session,
                     phonemeConverter = phonemeConverter,
-                    styleLoader = StyleLoader(LocalContext.current)
+                    styleLoader = StyleLoader(context)
                 )
                 Screen.Book -> BookScreen(
                     session = session,
                     phonemeConverter = phonemeConverter
                 )
+                Screen.Chat -> {
+                    // No-op, handled by onClick
+                }
                 Screen.More -> MoreScreen { screen ->
                     currentScreen = when (screen) {
                         "Creations" -> Screen.Creations
                         "Settings" -> Screen.Settings
+                        "Models" -> Screen.Models
                         else -> currentScreen
                     }
                 }
                 Screen.Creations -> CreationsScreen()
                 Screen.Settings -> SettingsScreen()
                 Screen.About -> AboutScreen()
+                Screen.Models -> ModelsScreen(userPreferencesRepository)
             }
         }
     }
@@ -263,7 +298,8 @@ fun MainScreen(
 @Composable
 fun BasicScreen(
     session: OrtSession,
-    onGenerateAudio: (String, String, Float, Boolean, () -> Unit) -> Unit
+    onGenerateAudio: (String, String, Float, Boolean, () -> Unit) -> Unit,
+    viewModel: MainViewModel
 ) {
     val context = LocalContext.current
     var text by remember { mutableStateOf("This is her warm heart, her warmest kokoro, unwavering love and comfort.") }
@@ -271,6 +307,17 @@ fun BasicScreen(
     var speed by remember { mutableFloatStateOf(SettingsManager.getSpeed(context)) }
     var isProcessing by remember { mutableStateOf(false) }
     var shouldSaveFile by remember { mutableStateOf(false) }
+
+    val modelManager = remember { com.example.kokoro82m.data.ModelManager(context) }
+    val models = remember { modelManager.models.filter { it.isDownloaded } }
+    var selectedModel by remember { mutableStateOf(models.firstOrNull()) }
+
+    LaunchedEffect(selectedModel) {
+        selectedModel?.let {
+            val modelFile = java.io.File(context.filesDir, "models/${it.id}.task")
+            viewModel.reinitializeSession(modelFile.absolutePath)
+        }
+    }
 
     val names = listOf(
         "af",
@@ -286,6 +333,7 @@ fun BasicScreen(
         "bm_lewis"
     )
     var expanded by remember { mutableStateOf(false) }
+    var modelExpanded by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -304,6 +352,40 @@ fun BasicScreen(
                 keyboardType = KeyboardType.Text
             )
         )
+
+        ExposedDropdownMenuBox(
+            expanded = modelExpanded,
+            onExpandedChange = { modelExpanded = !modelExpanded },
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            TextField(
+                value = selectedModel?.name ?: "Select a model",
+                onValueChange = { },
+                label = { Text("Model") },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor(),
+                readOnly = true,
+                trailingIcon = {
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = modelExpanded)
+                }
+            )
+
+            ExposedDropdownMenu(
+                expanded = modelExpanded,
+                onDismissRequest = { modelExpanded = false }
+            ) {
+                models.forEach { model ->
+                    DropdownMenuItem(
+                        text = { Text(model.name) },
+                        onClick = {
+                            selectedModel = model
+                            modelExpanded = false
+                        }
+                    )
+                }
+            }
+        }
 
         ExposedDropdownMenuBox(
             expanded = expanded,

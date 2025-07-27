@@ -29,3 +29,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "kokoro82m"
 include(":app")
+include(":app-chat")
+include(":app-tts")
