@@ -108,31 +108,34 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
                     Column {
-                    Text(text = model.name, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
-                    Text(text = model.description, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
-                }
-                val progress = progressMap[model.id]
-                if (model.isDownloaded) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Downloaded")
-                        Button(onClick = { modelManager.deleteModel(model) }) { Text("Delete") }
+                        Text(text = model.name, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                        Text(text = model.description, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
                     }
-                } else if (progress != null) {
-                    LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
-                } else {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Button(onClick = {
-                            if (model.gated) {
-                                selectedModel = model
-                                showDialog = true
-                            } else {
-                                modelDownloader.downloadModel(model)
+                    Column {
+                        val progress = progressMap[model.id]
+                        if (model.isDownloaded) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Downloaded")
+                                Button(onClick = { modelManager.deleteModel(model) }) { Text("Delete") }
                             }
-                        }) {
-                            Text(if (model.hasPartial) "Resume" else "Download")
-                        }
-                        if (model.hasPartial) {
-                            Button(onClick = { modelManager.deleteModel(model) }) { Text("Delete") }
+                        } else if (progress != null) {
+                            LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
+                        } else {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = {
+                                    if (model.gated) {
+                                        selectedModel = model
+                                        showDialog = true
+                                    } else {
+                                        modelDownloader.downloadModel(model)
+                                    }
+                                }) {
+                                    Text(if (model.hasPartial) "Resume" else "Download")
+                                }
+                                if (model.hasPartial) {
+                                    Button(onClick = { modelManager.deleteModel(model) }) { Text("Delete") }
+                                }
+                            }
                         }
                     }
                 }
