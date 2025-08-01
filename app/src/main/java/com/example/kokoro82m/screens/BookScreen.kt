@@ -25,6 +25,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.kokoro82m.R
 import com.example.kokoro82m.utils.*
+import com.example.kokoro82m.ui.components.ProgressDialog
 import com.example.kokoro82m.viewmodel.BookViewModel
 import kotlinx.coroutines.launch
 
@@ -54,6 +55,8 @@ fun BookScreen(
     var speed by remember { mutableFloatStateOf(SettingsManager.getSpeed(context)) }
     var debugMessage by remember { mutableStateOf<String?>(null) }
     var isProcessing by remember { mutableStateOf(false) }
+    var isPregenerating by remember { mutableStateOf(false) }
+    var preGenProgress by remember { mutableFloatStateOf(0f) }
 
     var showSettings by remember { mutableStateOf(true) }
 
@@ -294,6 +297,42 @@ fun BookScreen(
                 ) {
                     Text("Save Project")
                 }
+                Button(
+                    onClick = {
+                        if (bookUri != null) {
+                            isPregenerating = true
+                            preGenProgress = 0f
+                            scope.launch {
+                                try {
+                                    val project = Project(
+                                        uri = bookUri!!.toString(),
+                                        styles = selectedStyles,
+                                        weights = weights,
+                                        mode = interpolationMode,
+                                        speed = speed,
+                                        bookmark = bookmark
+                                    )
+                                    preGenerateBook(
+                                        context = context,
+                                        session = session,
+                                        phonemeConverter = phonemeConverter,
+                                        styleLoader = styleLoader,
+                                        project = project,
+                                        lines = lines,
+                                        onProgress = { preGenProgress = it }
+                                    )
+                                } catch (e: Exception) {
+                                    debugMessage = e.localizedMessage
+                                } finally {
+                                    isPregenerating = false
+                                }
+                            }
+                        }
+                    },
+                    enabled = !isPregenerating && lines.isNotEmpty() && bookUri != null
+                ) {
+                    Text(if (isPregenerating) "Pre-generating..." else "Pregenerate")
+                }
             }
         }
 
@@ -346,6 +385,13 @@ fun BookScreen(
                 Text(logs, modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_medium)))
             }
         }
+    }
+
+    if (isPregenerating) {
+        ProgressDialog(
+            message = "Pre-generating ${(preGenProgress * 100).toInt()}%",
+            progress = preGenProgress
+        )
     }
 }
 

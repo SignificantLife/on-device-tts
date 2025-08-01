@@ -1,6 +1,7 @@
 package com.example.kokoro82m.screens
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -11,17 +12,21 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
+import com.example.kokoro82m.ui.components.ProgressDialog
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import com.example.kokoro82m.data.Model
 import com.example.kokoro82m.data.ModelDownloader
@@ -36,6 +41,7 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
     val modelManager = remember { ModelManager(context) }
     val modelDownloader = remember { ModelDownloader(context, userPreferencesRepository) }
     val models = modelManager.models
+    val progressMap by modelDownloader.progress.collectAsState()
     val scope = rememberCoroutineScope()
 
     var showDialog by remember { mutableStateOf(false) }
@@ -89,36 +95,61 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
         )
     }
 
-    LazyColumn(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
-    ) {
-        items(models) { model ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column {
-                    Text(text = model.name, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
-                    Text(text = model.description, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
-                }
-                if (model.isDownloaded) {
-                    Text("Downloaded")
-                } else {
-                    Button(onClick = {
-                        if (model.gated) {
-                            selectedModel = model
-                            showDialog = true
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyColumn(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            items(models) { model ->
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column {
+                        Text(text = model.name, style = androidx.compose.material3.MaterialTheme.typography.titleMedium)
+                        Text(text = model.description, style = androidx.compose.material3.MaterialTheme.typography.bodyMedium)
+                    }
+                    Column {
+                        val progress = progressMap[model.id]
+                        if (model.isDownloaded) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Downloaded")
+                                Button(onClick = { modelManager.deleteModel(model) }) { Text("Delete") }
+                            }
+                        } else if (progress != null) {
+                            LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
                         } else {
-                            modelDownloader.downloadModel(model)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = {
+                                    if (model.gated) {
+                                        selectedModel = model
+                                        showDialog = true
+                                    } else {
+                                        modelDownloader.downloadModel(model)
+                                    }
+                                }) {
+                                    Text(if (model.hasPartial) "Resume" else "Download")
+                                }
+                                if (model.hasPartial) {
+                                    Button(onClick = { modelManager.deleteModel(model) }) { Text("Delete") }
+                                }
+                            }
                         }
-                    }) {
-                        Text("Download")
                     }
                 }
             }
+        }
+
+        if (progressMap.isNotEmpty()) {
+            val entry = progressMap.entries.first()
+            val downloading = models.find { it.id == entry.key }
+            val progress = entry.value
+            ProgressDialog(
+                message = "Downloading ${downloading?.name ?: "model"} ${(progress * 100).toInt()}%",
+                progress = progress,
+            )
         }
     }
 }

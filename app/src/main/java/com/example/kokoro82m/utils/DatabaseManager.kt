@@ -19,6 +19,7 @@ object DatabaseManager {
             put(DatabaseHelper.COLUMN_WEIGHTS, weightsJson)
             put(DatabaseHelper.COLUMN_MODE, project.mode.name)
             put(DatabaseHelper.COLUMN_SPEED, project.speed)
+            project.audioPath?.let { put(DatabaseHelper.COLUMN_AUDIO_PATH, it) }
             project.bookmark?.let {
                 put(DatabaseHelper.COLUMN_BOOKMARK_LINE, it.line)
                 put(DatabaseHelper.COLUMN_BOOKMARK_POSITION, it.position)
@@ -56,8 +57,10 @@ object DatabaseManager {
             val bookmarkLine = cursor.getInt(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BOOKMARK_LINE))
             val bookmarkPosition = cursor.getInt(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_BOOKMARK_POSITION))
             val bookmark = if (bookmarkLine != -1) Bookmark(bookmarkLine, bookmarkPosition) else null
+            val audioPathIndex = cursor.getColumnIndex(DatabaseHelper.COLUMN_AUDIO_PATH)
+            val audioPath = if (audioPathIndex != -1) cursor.getString(audioPathIndex) else null
 
-            project = Project(uri, styles, weights, mode, speed, bookmark)
+            project = Project(uri, styles, weights, mode, speed, bookmark, audioPath)
         }
 
         cursor.close()
@@ -111,6 +114,46 @@ object DatabaseManager {
             put(DatabaseHelper.COLUMN_BOOKMARK_POSITION, -1)
         }
         db.update(DatabaseHelper.TABLE_PROJECTS, values, "${DatabaseHelper.COLUMN_URI} = ?", arrayOf(uri))
+        db.close()
+    }
+
+    fun setAudioLine(context: Context, uri: String, index: Int, path: String) {
+        val dbHelper = DatabaseHelper(context)
+        val db = dbHelper.writableDatabase
+        val values = ContentValues().apply {
+            put(DatabaseHelper.COLUMN_URI, uri)
+            put(DatabaseHelper.COLUMN_LINE_INDEX, index)
+            put(DatabaseHelper.COLUMN_FILE_PATH, path)
+        }
+        db.replace(DatabaseHelper.TABLE_AUDIO_LINES, null, values)
+        db.close()
+    }
+
+    fun getAudioLine(context: Context, uri: String, index: Int): String? {
+        val dbHelper = DatabaseHelper(context)
+        val db = dbHelper.readableDatabase
+        val cursor = db.query(
+            DatabaseHelper.TABLE_AUDIO_LINES,
+            arrayOf(DatabaseHelper.COLUMN_FILE_PATH),
+            "${DatabaseHelper.COLUMN_URI} = ? AND ${DatabaseHelper.COLUMN_LINE_INDEX} = ?",
+            arrayOf(uri, index.toString()),
+            null,
+            null,
+            null
+        )
+        var path: String? = null
+        if (cursor.moveToFirst()) {
+            path = cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_FILE_PATH))
+        }
+        cursor.close()
+        db.close()
+        return path
+    }
+
+    fun clearAudioLines(context: Context, uri: String) {
+        val dbHelper = DatabaseHelper(context)
+        val db = dbHelper.writableDatabase
+        db.delete(DatabaseHelper.TABLE_AUDIO_LINES, "${DatabaseHelper.COLUMN_URI} = ?", arrayOf(uri))
         db.close()
     }
 

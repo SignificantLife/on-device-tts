@@ -77,6 +77,8 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
+const val EXTRA_START_SCREEN = "start_screen"
+
 class MyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
@@ -94,6 +96,8 @@ class MainActivity : ComponentActivity() {
         DebugLogger.initialize(this)
         enableEdgeToEdge()
         userPreferencesRepository = UserPreferencesRepository(this)
+
+        val startScreen = screenFromString(intent.getStringExtra(EXTRA_START_SCREEN))
 
         setContent {
             KokoroTheme {
@@ -120,7 +124,8 @@ class MainActivity : ComponentActivity() {
                             onComplete
                         )
                     },
-                    userPreferencesRepository = userPreferencesRepository
+                    userPreferencesRepository = userPreferencesRepository,
+                    initialScreen = startScreen
                 )
             }
         }
@@ -185,6 +190,20 @@ private fun generateAudio(
     }
 }
 
+private fun screenFromString(name: String?): Screen = when (name) {
+    "Basic" -> Screen.Basic
+    "Mixer" -> Screen.Mixer
+    "Book" -> Screen.Book
+    "Chat" -> Screen.Chat
+    "ChatTts" -> Screen.ChatTts
+    "More" -> Screen.More
+    "Creations" -> Screen.Creations
+    "Settings" -> Screen.Settings
+    "About" -> Screen.About
+    "Models" -> Screen.Models
+    else -> Screen.Basic
+}
+
 sealed class Screen(val title: String) {
     object Basic : Screen("Basic TTS")
     object Mixer : Screen("Mixer")
@@ -204,9 +223,10 @@ fun MainScreen(
     session: OrtSession,
     phonemeConverter: PhonemeConverter,
     onGenerateAudio: (String, String, Float, Boolean, () -> Unit) -> Unit,
-    userPreferencesRepository: UserPreferencesRepository
+    userPreferencesRepository: UserPreferencesRepository,
+    initialScreen: Screen = Screen.Basic
 ) {
-    var currentScreen by remember { mutableStateOf<Screen>(Screen.Basic) }
+    var currentScreen by remember { mutableStateOf(initialScreen) }
     var hudEnabled by remember { mutableStateOf(false) }
     val context = LocalContext.current
     val viewModel: MainViewModel = viewModel { MainViewModel(context) }
