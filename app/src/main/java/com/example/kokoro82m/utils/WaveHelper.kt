@@ -68,6 +68,24 @@ fun saveAudio(audioData: FloatArray, context: Context, name: String) {
     }
 }
 
+fun saveAudioInternal(audioData: FloatArray, file: java.io.File) {
+    val sampleRate = 22050
+    val header = createWavHeader(audioData.size, sampleRate)
+
+    val byteBuffer = ByteBuffer.allocate(audioData.size * 2)
+    byteBuffer.order(ByteOrder.LITTLE_ENDIAN)
+    val shortBuffer = byteBuffer.asShortBuffer()
+    for (sample in audioData) {
+        val pcmValue = (sample * Short.MAX_VALUE).toInt().toShort()
+        shortBuffer.put(pcmValue)
+    }
+
+    file.outputStream().use { outputStream ->
+        outputStream.write(header)
+        outputStream.write(byteBuffer.array())
+    }
+}
+
 private fun createWavHeader(dataSize: Int, sampleRate: Int): ByteArray {
     val header = ByteArray(44)
     val totalDataSize = dataSize * 2 + 36

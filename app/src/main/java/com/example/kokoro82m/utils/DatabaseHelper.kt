@@ -8,7 +8,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
 
     companion object {
         private const val DATABASE_NAME = "kokoro.db"
-        private const val DATABASE_VERSION = 1
+        private const val DATABASE_VERSION = 2
         const val TABLE_PROJECTS = "projects"
         const val COLUMN_ID = "_id"
         const val COLUMN_URI = "uri"
@@ -18,6 +18,11 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
         const val COLUMN_SPEED = "speed"
         const val COLUMN_BOOKMARK_LINE = "bookmark_line"
         const val COLUMN_BOOKMARK_POSITION = "bookmark_position"
+        const val COLUMN_AUDIO_PATH = "audio_path"
+
+        const val TABLE_AUDIO_LINES = "audio_lines"
+        const val COLUMN_LINE_INDEX = "line_index"
+        const val COLUMN_FILE_PATH = "file_path"
 
         const val TABLE_SETTINGS = "settings"
         const val COLUMN_KEY = "key"
@@ -33,8 +38,17 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
                 "$COLUMN_MODE TEXT," +
                 "$COLUMN_SPEED REAL," +
                 "$COLUMN_BOOKMARK_LINE INTEGER," +
-                "$COLUMN_BOOKMARK_POSITION INTEGER)"
+                "$COLUMN_BOOKMARK_POSITION INTEGER," +
+                "$COLUMN_AUDIO_PATH TEXT)"
         db.execSQL(createProjectsTable)
+
+        val createAudioLinesTable = "CREATE TABLE $TABLE_AUDIO_LINES (" +
+                "$COLUMN_ID INTEGER PRIMARY KEY AUTOINCREMENT," +
+                "$COLUMN_URI TEXT," +
+                "$COLUMN_LINE_INDEX INTEGER," +
+                "$COLUMN_FILE_PATH TEXT," +
+                "UNIQUE($COLUMN_URI, $COLUMN_LINE_INDEX))"
+        db.execSQL(createAudioLinesTable)
 
         val createSettingsTable = "CREATE TABLE $TABLE_SETTINGS (" +
                 "$COLUMN_ID INTEGER PRIMARY KEY AUTOINCREMENT," +
@@ -46,6 +60,7 @@ class DatabaseHelper(context: Context) : SQLiteOpenHelper(context, DATABASE_NAME
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
         db.execSQL("DROP TABLE IF EXISTS $TABLE_PROJECTS")
         db.execSQL("DROP TABLE IF EXISTS $TABLE_SETTINGS")
+        db.execSQL("DROP TABLE IF EXISTS $TABLE_AUDIO_LINES")
         onCreate(db)
     }
 }
