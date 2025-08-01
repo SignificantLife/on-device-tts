@@ -1,6 +1,7 @@
 package com.example.kokoro82m
 
 import KokoroTheme
+import android.content.Intent
 import android.os.Bundle
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -27,9 +28,14 @@ class ChatTtsActivity : ComponentActivity() {
         if (chatModel == null || !chatModel.isDownloaded) {
             Toast.makeText(
                 this,
-                "Chat model not downloaded. Please go to More > Models to download it.",
+                "Chat model not downloaded. Redirecting to model page.",
                 Toast.LENGTH_LONG
             ).show()
+            startActivity(
+                Intent(this, MainActivity::class.java).apply {
+                    putExtra(EXTRA_START_SCREEN, "Models")
+                }
+            )
             finish()
             return
         }
