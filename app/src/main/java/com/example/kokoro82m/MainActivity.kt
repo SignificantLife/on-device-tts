@@ -10,10 +10,15 @@ import com.example.kokoro82m.screens.ModelsScreen
 import com.example.kokoro.galleryport.PerfHud
 import ai.onnxruntime.OrtSession
 import android.app.Application
+import android.app.NotificationChannel
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -58,6 +63,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
+import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.kokoro82m.data.UserPreferencesRepository
 import com.example.kokoro82m.screens.Acknowledgements
@@ -78,6 +85,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 const val EXTRA_START_SCREEN = "start_screen"
+private const val PLAYBACK_CHANNEL_ID = "playback_channel"
+private const val PLAYBACK_NOTIFICATION_ID = 1
 
 class MyApplication : Application() {
     override fun onCreate() {
@@ -86,10 +95,47 @@ class MyApplication : Application() {
     }
 }
 
+private fun showPlaybackNotification(context: Context) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+        ContextCompat.checkSelfPermission(
+            context,
+            android.Manifest.permission.POST_NOTIFICATIONS
+        ) != PackageManager.PERMISSION_GRANTED
+    ) {
+        return
+    }
+
+    val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+        val channel = NotificationChannel(
+            PLAYBACK_CHANNEL_ID,
+            "Playback",
+            NotificationManager.IMPORTANCE_LOW
+        )
+        manager.createNotificationChannel(channel)
+    }
+
+    val notification = NotificationCompat.Builder(context, PLAYBACK_CHANNEL_ID)
+        .setSmallIcon(android.R.drawable.ic_media_play)
+        .setContentTitle("Playback")
+        .setContentText("Audio playback in progress")
+        .setOngoing(true)
+        .build()
+
+    manager.notify(PLAYBACK_NOTIFICATION_ID, notification)
+}
+
 class MainActivity : ComponentActivity() {
     private lateinit var phonemeConverter: PhonemeConverter
     private val scope = MainScope()
     private lateinit var userPreferencesRepository: UserPreferencesRepository
+    private val requestPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            showPlaybackNotification(this)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -112,6 +158,7 @@ class MainActivity : ComponentActivity() {
                     session = session,
                     phonemeConverter = phonemeConverter,
                     onGenerateAudio = { text, style, speed, shouldSave, onComplete ->
+                        maybeRequestNotificationPermission()
                         generateAudio(
                             session,
                             phonemeConverter,
@@ -136,6 +183,17 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         scope.cancel()
+    }
+
+    private fun maybeRequestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            ContextCompat.checkSelfPermission(
+                this,
+                android.Manifest.permission.POST_NOTIFICATIONS
+            ) != PackageManager.PERMISSION_GRANTED
+        ) {
+            requestPermissionLauncher.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
     }
 }
 
@@ -173,6 +231,8 @@ private fun generateAudio(
                 audioData, scope,
                 onComplete = onComplete
             )
+
+            showPlaybackNotification(context)
 
             if (shouldSave) {
                 saveAudio(audioData, context, style)
