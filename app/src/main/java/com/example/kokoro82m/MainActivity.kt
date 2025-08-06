@@ -216,27 +216,29 @@ private fun generateAudio(
     scope.launch(Dispatchers.IO) {
         try {
             val engine = SettingsManager.getTtsEngine(context)
-            val (audioData, sampleRate) = PerfHud.record("ONNX synth") {
-                if (engine == TtsEngine.KITTEN) {
-                    val (phonemeStr, tokens) = KittenPhonemizer.phonemize(text)
-                    DebugLogger.log("Phonemes: $phonemeStr")
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Phonemes: $phonemeStr", Toast.LENGTH_LONG).show()
-                    }
-                    val loader = StyleLoader(context)
-                    val voiceArray = loader.getStyleArray(style)
+            val (audioData, sampleRate) = if (engine == TtsEngine.KITTEN) {
+                val (phonemeStr, tokens) = KittenPhonemizer.phonemize(text)
+                DebugLogger.log("Phonemes: $phonemeStr")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Phonemes: $phonemeStr", Toast.LENGTH_LONG).show()
+                }
+                val loader = StyleLoader(context)
+                val voiceArray = loader.getStyleArray(style)
+                PerfHud.record("ONNX synth") {
                     createKittenAudioFromStyleVector(
                         tokens = tokens,
                         voice = voiceArray,
                         speed = speed,
                         session = session
                     )
-                } else {
-                    val phonemes = phonemeConverter.phonemize(text)
-                    DebugLogger.log("Phonemes: $phonemes")
-                    withContext(Dispatchers.Main) {
-                        Toast.makeText(context, "Phonemes: $phonemes", Toast.LENGTH_LONG).show()
-                    }
+                }
+            } else {
+                val phonemes = phonemeConverter.phonemize(text)
+                DebugLogger.log("Phonemes: $phonemes")
+                withContext(Dispatchers.Main) {
+                    Toast.makeText(context, "Phonemes: $phonemes", Toast.LENGTH_LONG).show()
+                }
+                PerfHud.record("ONNX synth") {
                     createAudio(
                         voice = style,
                         phonemes = phonemes,
