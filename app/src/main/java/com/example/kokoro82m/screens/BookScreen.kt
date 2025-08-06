@@ -332,6 +332,7 @@ fun BookScreen(
                                 startLine = currentLine.coerceAtLeast(0),
                                 bookUri = bookUri,
                                 context = context,
+                                engine = SettingsManager.getTtsEngine(context),
                                 usePregenerated = usePregenerated,
                                 onFinished = {
                                     bookUri?.let { u -> BookmarkManager.clear(context, u.toString()) }
@@ -372,6 +373,7 @@ fun BookScreen(
                                 )
                                 val audioData = mutableListOf<Float>()
                                 val engine = SettingsManager.getTtsEngine(context)
+                                val sampleRate = if (engine == TtsEngine.KITTEN) 24000 else 22050
                                 for (line in lines) {
                                     val phonemes = phonemeConverter.phonemize(line)
                                     val (audio, _) = if (engine == TtsEngine.KITTEN) {
@@ -392,7 +394,7 @@ fun BookScreen(
                                     audioData.addAll(audio.toList())
                                 }
                                 val fileName = buildStyleFileName(selectedStyles, weights, interpolationMode)
-                                val uri = saveAudio(audioData.toFloatArray(), context, fileName)
+                                val uri = saveAudio(audioData.toFloatArray(), context, fileName, sampleRate)
                                 uri?.let { openAudioFile(context, it) }
                             } catch (e: Exception) {
                                 debugMessage = e.localizedMessage
@@ -420,6 +422,7 @@ fun BookScreen(
                                     )
                                     val audioData = mutableListOf<Float>()
                                     val engine = SettingsManager.getTtsEngine(context)
+                                    val sampleRate = if (engine == TtsEngine.KITTEN) 24000 else 22050
                                     for (i in selectedLines.sorted()) {
                                         val phonemes = phonemeConverter.phonemize(lines[i])
                                         val (audio, _) = if (engine == TtsEngine.KITTEN) {
@@ -440,7 +443,7 @@ fun BookScreen(
                                         audioData.addAll(audio.toList())
                                     }
                                     val fileName = buildStyleFileName(selectedStyles, weights, interpolationMode) + "_clip"
-                                    val uri = saveAudio(audioData.toFloatArray(), context, fileName)
+                                    val uri = saveAudio(audioData.toFloatArray(), context, fileName, sampleRate)
                                     uri?.let { openAudioFile(context, it) }
                                     selectedLines.clear()
                                 } catch (e: Exception) {
@@ -521,6 +524,7 @@ fun BookScreen(
                                     startLine = index,
                                     bookUri = bookUri,
                                     context = context,
+                                    engine = SettingsManager.getTtsEngine(context),
                                     usePregenerated = usePregenerated,
                                     onFinished = {
                                         bookUri?.let { u -> BookmarkManager.clear(context, u.toString()) }

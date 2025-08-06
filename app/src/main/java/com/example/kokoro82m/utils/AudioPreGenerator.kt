@@ -33,7 +33,7 @@ suspend fun preGenerateBook(
         DebugLogger.log("Generating line $index for ${project.uri}")
         val phonemes = phonemeConverter.phonemize(line)
         val engine = SettingsManager.getTtsEngine(context)
-        val (audio, _) = if (engine == TtsEngine.KITTEN) {
+        val (audio, sampleRate) = if (engine == TtsEngine.KITTEN) {
             createKittenAudioFromStyleVector(
                 phonemes = phonemes,
                 voice = mixed,
@@ -49,7 +49,7 @@ suspend fun preGenerateBook(
             )
         }
         val file = File(baseDir, "$index.wav")
-        saveAudioInternal(audio, file)
+        saveAudioInternal(audio, file, sampleRate)
         DatabaseManager.setAudioLine(context, project.uri, index, file.absolutePath)
         val progress = (index + 1).toFloat() / lines.size
         onProgress(progress)

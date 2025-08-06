@@ -237,7 +237,7 @@ private fun generateAudio(
         try {
             val phonemes = phonemeConverter.phonemize(text)
             val engine = SettingsManager.getTtsEngine(context)
-            val (audio, _) = if (engine == TtsEngine.KITTEN) {
+            val (audio, sampleRate) = if (engine == TtsEngine.KITTEN) {
                 createKittenAudioFromStyleVector(
                     phonemes = phonemes,
                     voice = style,
@@ -253,9 +253,9 @@ private fun generateAudio(
                 )
             }
             if (shouldSaveFile && fileName != null) {
-                saveAudio(audio, context, fileName)
+                saveAudio(audio, context, fileName, sampleRate)
             }
-            playAudio(audio, scope) {}
+            playAudio(audio, sampleRate, scope) {}
         } catch (e: Exception) {
             DebugLogger.log("Mixer error: ${e.message}")
         } finally {
