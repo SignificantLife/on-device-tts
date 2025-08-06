@@ -8,6 +8,8 @@ import com.example.kokoro.chat.ChatMessage
 import com.example.kokoro.chat.LlmInference
 import com.example.kokoro82m.utils.AudioPlayer
 import com.example.kokoro82m.utils.InterpolationMode
+import com.example.kokoro82m.utils.KittenAudioPlayer
+import com.example.kokoro82m.utils.KokoroAudioPlayer
 import com.example.kokoro82m.utils.PhonemeConverter
 import com.example.kokoro82m.utils.PlayerState
 import com.example.kokoro82m.utils.StyleLoader
@@ -35,8 +37,13 @@ class ChatTtsViewModel(
     private val phonemeConverter = PhonemeConverter(context)
     val styleLoader = StyleLoader(context)
     private val defaultVoice = styleLoader.names.firstOrNull() ?: "af_sarah"
-    private val audioPlayer = AudioPlayer(viewModelScope) { newState ->
-        _playerState.value = newState
+    private val audioPlayer: AudioPlayer = when (SettingsManager.getTtsEngine(context)) {
+        TtsEngine.KOKORO -> KokoroAudioPlayer(viewModelScope) { newState ->
+            _playerState.value = newState
+        }
+        TtsEngine.KITTEN -> KittenAudioPlayer(viewModelScope) { newState ->
+            _playerState.value = newState
+        }
     }
 
     // Chat State

@@ -244,14 +244,16 @@ private fun generateAudio(
             }
 
             playAudio(
-                audioData, scope,
+                audioData,
+                sampleRate,
+                scope,
                 onComplete = onComplete
             )
 
             showPlaybackNotification(context)
 
             if (shouldSave) {
-                saveAudio(audioData, context, style)
+                saveAudio(audioData, context, style, sampleRate)
             }
         } catch (e: Exception) {
             DebugLogger.log("Error: ${e.message}")
