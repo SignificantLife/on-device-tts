@@ -21,6 +21,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.material3.ExposedDropdownMenuBox
 import androidx.compose.material3.ExposedDropdownMenuDefaults
+import androidx.compose.material3.ExposedDropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -281,9 +282,7 @@ private fun saveStyleConfig(
 }
 
 
-@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class,
-    ExperimentalMaterial3Api::class
-)
+@OptIn(ExperimentalLayoutApi::class, ExperimentalMaterial3Api::class)
 @Composable
 fun StyleSelector(
     styleNames: List<String>,
