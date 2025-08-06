@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.RecordVoiceOver
 import androidx.compose.material3.Button
+import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExposedDropdownMenuBox
@@ -490,7 +491,7 @@ fun BasicScreen(
                 }
             )
 
-            ExposedDropdownMenu(
+            DropdownMenu(
                 expanded = modelExpanded,
                 onDismissRequest = { modelExpanded = false }
             ) {
@@ -527,7 +528,7 @@ fun BasicScreen(
                 }
             )
 
-            ExposedDropdownMenu(
+            DropdownMenu(
                 expanded = expanded,
                 onDismissRequest = { expanded = false }
             ) {
