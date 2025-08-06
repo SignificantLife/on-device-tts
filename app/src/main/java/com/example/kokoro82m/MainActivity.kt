@@ -1,6 +1,7 @@
 package com.example.kokoro82m
 
-import KokoroTheme
+import NabuTheme
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.example.kokoro82m.screens.BookScreen
 import com.example.kokoro82m.screens.CreationsScreen
 import com.example.kokoro82m.screens.SettingsScreen
@@ -138,6 +139,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        installSplashScreen()
         super.onCreate(savedInstanceState)
         DebugLogger.initialize(this)
         enableEdgeToEdge()
@@ -146,7 +148,7 @@ class MainActivity : ComponentActivity() {
         val startScreen = screenFromString(intent.getStringExtra(EXTRA_START_SCREEN))
 
         setContent {
-            KokoroTheme {
+            NabuTheme {
                 LaunchedEffect(Unit) {
                     WindowCompat.setDecorFitsSystemWindows(window, false)
                 }
@@ -402,8 +404,16 @@ fun BasicScreen(
     viewModel: MainViewModel
 ) {
     val context = LocalContext.current
+    val styleLoader = remember { StyleLoader(context) }
+    val names = styleLoader.names.sorted()
+
     var text by remember { mutableStateOf("This is her warm heart, her warmest kokoro, unwavering love and comfort.") }
-    var style by remember { mutableStateOf(SettingsManager.getStyle(context)) }
+    var style by remember {
+        mutableStateOf(
+            SettingsManager.getStyle(context).takeIf { it in names }
+                ?: names.firstOrNull().orEmpty()
+        )
+    }
     var speed by remember { mutableFloatStateOf(SettingsManager.getSpeed(context)) }
     var isProcessing by remember { mutableStateOf(false) }
     var shouldSaveFile by remember { mutableStateOf(false) }
@@ -419,19 +429,6 @@ fun BasicScreen(
         }
     }
 
-    val names = listOf(
-        "af",
-        "af_bella",
-        "af_nicole",
-        "af_sarah",
-        "af_sky",
-        "am_adam",
-        "am_michael",
-        "bf_emma",
-        "bf_isabella",
-        "bm_george",
-        "bm_lewis"
-    )
     var expanded by remember { mutableStateOf(false) }
     var modelExpanded by remember { mutableStateOf(false) }
 
