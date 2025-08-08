@@ -11,19 +11,13 @@ object KittenPhonemizer {
         val pad = '$'
         val punctuation = ";:,.!?¡¿—…\"«»“” "
         val letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-        val lettersIpa = "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɲɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʐʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
+        val lettersIpa = "ɑɐɒæɓʙβɔɕçɗɖðʤəɘɚɛɜɝɞɟʄɡɠɢʛɦɧħɥʜɨɪʝɭɬɫɮʟɱɯɰŋɳɴøɵɸθœɶʘɹɺɾɻʀʁɽʂʃʈʧʉʊʋⱱʌɣɤʍχʎʏʑʒʔʡʕʢǀǁǂǃˈˌːˑʼʴʰʱʲʷˠˤ˞↓↑→↗↘'̩'ᵻ"
         val symbols = listOf(pad) + punctuation.toList() + letters.toList() + lettersIpa.toList()
         VOCAB = symbols.withIndex().associate { (index, char) -> char to index }
     }
 
-    private fun getPhonemes(text: String): String {
-        var ipa = KittenPhonemizerStatic.phonemize(text)
-        ipa = ipa.replace("\\s+".toRegex(), " ").trim()
-        return ipa
-    }
-
     fun phonemize(text: String): Pair<String, LongArray> {
-        val phonemeStr = getPhonemes(text)
+        val phonemeStr = KittenPhonemizerStatic.phonemize(text)
         val truncated = phonemeStr.take(MAX_PHONEME_LENGTH)
         val tokens = truncated.map { ch ->
             VOCAB[ch] ?: throw IllegalArgumentException("Kitten TTS: Unknown symbol '$ch'")
@@ -35,4 +29,3 @@ object KittenPhonemizer {
         return Pair(truncated, padded)
     }
 }
-
