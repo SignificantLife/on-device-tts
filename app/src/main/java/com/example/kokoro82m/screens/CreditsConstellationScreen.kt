@@ -3,6 +3,7 @@ package com.example.kokoro82m.screens
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -13,6 +14,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Icon
@@ -20,9 +22,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,10 +51,10 @@ data class CreditGroup(
 
 @Composable
 fun CreditsConstellationScreen() {
-    // Legacy credits preserved exactly
     val legacyCredits = remember {
         CreditGroup(
-            title = "Original Author",
+            title = "Original Credits",
+            entries = emptyList(),
             children = listOf(
                 CreditGroup(
                     title = "Credits",
@@ -83,7 +85,6 @@ fun CreditsConstellationScreen() {
         )
     }
 
-    // Our own acknowledgments
     val ourCredits = remember {
         CreditGroup(
             title = "Our Credit Wall",
@@ -94,39 +95,71 @@ fun CreditsConstellationScreen() {
         )
     }
 
-    Column(
+    var expandedGroup by remember { mutableStateOf<CreditGroup?>(null) }
+
+    Box(
         modifier = Modifier
             .fillMaxSize()
-            .padding(16.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+            .padding(16.dp)
+            .pointerInput(expandedGroup) {
+                if (expandedGroup != null) {
+                    detectTapGestures { expandedGroup = null }
+                }
+            },
+        contentAlignment = Alignment.Center
     ) {
-        StarCluster(group = legacyCredits)
-        Spacer(modifier = Modifier.height(32.dp))
-        StarCluster(group = ourCredits)
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            StarCluster(
+                group = legacyCredits,
+                expanded = expandedGroup == legacyCredits,
+                onToggle = {
+                    expandedGroup = if (expandedGroup == legacyCredits) null else legacyCredits
+                }
+            )
+            Spacer(modifier = Modifier.height(32.dp))
+            StarCluster(
+                group = ourCredits,
+                expanded = expandedGroup == ourCredits,
+                onToggle = {
+                    expandedGroup = if (expandedGroup == ourCredits) null else ourCredits
+                }
+            )
+        }
     }
 }
 
 @Composable
-private fun StarCluster(group: CreditGroup, modifier: Modifier = Modifier, size: Dp = 200.dp) {
-    var expanded by remember { mutableStateOf(false) }
+private fun StarCluster(
+    group: CreditGroup,
+    modifier: Modifier = Modifier,
+    size: Dp = 200.dp,
+    expanded: Boolean? = null,
+    onToggle: (() -> Unit)? = null,
+) {
+    var internalExpanded by remember { mutableStateOf(false) }
+    val isExpanded = expanded ?: internalExpanded
+    val toggle = onToggle ?: { internalExpanded = !internalExpanded }
     val radius = (size / 2) - 24.dp
     Box(modifier = modifier.padding(8.dp).size(size), contentAlignment = Alignment.Center) {
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            IconButton(onClick = { expanded = !expanded }) {
+            IconButton(onClick = toggle) {
                 Icon(Icons.Default.Star, contentDescription = group.title)
             }
             Text(text = group.title, style = MaterialTheme.typography.labelSmall, textAlign = TextAlign.Center)
         }
-        AnimatedVisibility(visible = expanded) {
+        AnimatedVisibility(visible = isExpanded) {
             val nodes = group.children.map { Node.Group(it) } + group.entries.map { Node.Entry(it) }
             val density = LocalDensity.current
             Box(modifier = Modifier.fillMaxSize()) {
                 val radiusPx = with(density) { radius.toPx() }
                 nodes.forEachIndexed { index, node ->
                     val angle = 2 * PI * index / nodes.size
-                    val x = (cos(angle) * radiusPx).roundToInt()
-                    val y = (sin(angle) * radiusPx).roundToInt()
+                    val distance = radiusPx + (index % 2) * (radiusPx * 0.3f)
+                    val x = (cos(angle) * distance).roundToInt()
+                    val y = (sin(angle) * distance).roundToInt()
                     when (node) {
                         is Node.Group -> StarCluster(
                             group = node.group,
