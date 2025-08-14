@@ -27,7 +27,7 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "kokoro82m"
+rootProject.name = "nabu"
 include(":app")
 include(":app-chat")
 include(":app-tts")
