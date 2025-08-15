@@ -9,15 +9,11 @@ This project is a fork of the excellent [Kokoro-82M-Android](https://github.com/
 ## Screenshots
 
 <p align="center">
-![Image](https://github.com/user-attachments/assets/9b854972-a608-43ac-bea3-4ab8e637e2f8)
 
-![Image](https://github.com/user-attachments/assets/03859019-6dea-4652-93ad-bc5a825d6aa9)
+<img src="https://github.com/user-attachments/assets/03859019-6dea-4652-93ad-bc5a825d6aa9" alt="Models" style="width:20%;height:auto;" loading="lazy">
+<img src="https://github.com/user-attachments/assets/151d9cf5-f367-4f7b-8e5a-b766a7507445" alt="Style Mixer" style="width:20%;height:auto;" loading="lazy">
 
-![Image](https://github.com/user-attachments/assets/151d9cf5-f367-4f7b-8e5a-b766a7507445)
 
-![Image](https://github.com/user-attachments/assets/bc4047b5-0974-4007-8ead-ff99901f2fa0)
-
-![Image](https://github.com/user-attachments/assets/8cb2ec1e-2e1b-4826-91ec-d158e06de5d6)
 </p>
 
 **New features in Nabu:**
