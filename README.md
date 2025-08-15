@@ -5,7 +5,8 @@ Nabu is an advanced, on-device Text-to-Speech (TTS) and Chat application for And
 ## Acknowledgment
 
 This project is a fork of the excellent [Kokoro-82M-Android](https://github.com/puff-dayo/Kokoro-82M-Android/) app by **puff-dayo**. A huge thank you for creating the original demo and making it open-source! This work stands on the shoulders of that initial effort.
-
+## Videos
+[▶ Watch the video](https://github.com/user-attachments/assets/43d1b910-8453-4471-8d85-78144c8b9914)
 ## Screenshots
 
 <p align="center">
