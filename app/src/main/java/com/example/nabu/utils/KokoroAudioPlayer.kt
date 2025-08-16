@@ -30,6 +30,7 @@ class KokoroAudioPlayer(
     override fun prepare(audio: FloatArray, position: Int) {
         DebugLogger.log("KokoroAudioPlayer prepare length=${audio.size}, position=$position")
         release() // Release any existing track
+        PcmTap.pushFloats(audio)
         val channelConfig = AudioFormat.CHANNEL_OUT_MONO
         val audioFormat = AudioFormat.ENCODING_PCM_16BIT
         val bufferSize = AudioTrack.getMinBufferSize(sampleRate, channelConfig, audioFormat)

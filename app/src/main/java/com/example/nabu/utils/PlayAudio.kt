@@ -30,6 +30,7 @@ fun playAudio(audioData: FloatArray, sampleRate: Int, scope: CoroutineScope, onC
         byteBuffer.order(ByteOrder.LITTLE_ENDIAN)
         val shortBuffer = byteBuffer.asShortBuffer()
 
+        PcmTap.pushFloats(audioData)
         for (sample in audioData) {
             val pcmValue = (sample * Short.MAX_VALUE).toInt().toShort()
             shortBuffer.put(pcmValue)
