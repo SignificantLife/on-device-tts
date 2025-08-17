@@ -58,6 +58,8 @@ import com.example.nabu.utils.createAudioFromStyleVector
 import com.example.nabu.utils.createKittenAudioFromStyleVector
 import com.example.nabu.utils.mixStyles
 import com.mewmix.nabu.ui.brutalist.BrutalButton
+import com.mewmix.nabu.ui.brutalist.BrutalSlider
+import com.mewmix.nabu.ui.brutalist.PanelRow
 import com.example.nabu.utils.playAudio
 import com.example.nabu.utils.saveAudio
 import com.example.nabu.utils.SettingsManager
@@ -312,8 +314,7 @@ fun StyleSelector(
         Text(
             "Selected Styles:",
             style = MaterialTheme.typography.labelLarge,
-            color = Brutal.textBright,
-            fontFamily = Brutal.mono
+            color = Brutal.textBright
         )
 
         FlowRow(
@@ -323,7 +324,7 @@ fun StyleSelector(
             selectedStyles.forEach { style ->
                 SuggestionChip(
                     onClick = { onRemoveStyle(style) },
-                    label = { Text(style, color = Brutal.textBright, fontFamily = Brutal.mono) },
+                    label = { Text(style, color = Brutal.textBright) },
                     icon = {
                         Icon(
                             Icons.Default.Close,
@@ -358,7 +359,7 @@ fun StyleSelector(
                         modifier = Modifier.graphicsLayer(rotationZ = if (expanded) 180f else 0f)
                     )
                 },
-                placeholder = { Text("Add style...", color = Brutal.textDim, fontFamily = Brutal.mono) },
+                placeholder = { Text("Add style...", color = Brutal.textDim) },
                 colors = TextFieldDefaults.colors(
                     focusedContainerColor = Brutal.panelBg,
                     unfocusedContainerColor = Brutal.panelBg,
@@ -370,7 +371,7 @@ fun StyleSelector(
                     focusedPlaceholderColor = Brutal.textDim,
                     unfocusedPlaceholderColor = Brutal.textDim
                 ),
-                textStyle = MaterialTheme.typography.bodyLarge.copy(fontFamily = Brutal.mono),
+                textStyle = MaterialTheme.typography.bodyLarge,
                 modifier = Modifier
                     .menuAnchor()
                     .fillMaxWidth()
@@ -386,7 +387,7 @@ fun StyleSelector(
             ) {
                 styleNames.filter { it !in selectedStyles }.forEach { style ->
                     DropdownMenuItem(
-                        text = { Text(style, color = Brutal.textBright, fontFamily = Brutal.mono) },
+                        text = { Text(style, color = Brutal.textBright) },
                         onClick = {
                             onAddStyle(style)
                             expanded = false
@@ -409,12 +410,10 @@ fun WeightSliders(
         Text("Style Weights:", style = MaterialTheme.typography.labelLarge)
 
         selectedStyles.forEach { style ->
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = style, modifier = Modifier.width(120.dp))
-                Slider(
+            PanelRow(name = style) {
+                BrutalSlider(
                     value = weights[style] ?: 0f,
                     onValueChange = { onWeightChanged(style, it) },
-                    valueRange = 0f..1f,
                     modifier = Modifier.weight(1f)
                 )
                 Text(text = "%.2f".format(weights[style] ?: 0f))

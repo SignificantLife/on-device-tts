@@ -138,7 +138,7 @@ fun ChatTtsScreen(
                         onModeSelected = viewModel::updateInterpolationMode,
                     )
                     Spacer(modifier = Modifier.height(8.dp))
-                    Text("Speed: ${"%.2f".format(speed)}", color = Brutal.textBright, fontFamily = Brutal.mono)
+                    Text("Speed: ${"%.2f".format(speed)}", color = Brutal.textBright)
                     Slider(
                         value = speed,
                         onValueChange = { viewModel.updateSpeed(it) },

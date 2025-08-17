@@ -31,6 +31,7 @@ import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.BrutalSection
 import com.mewmix.nabu.ui.brutalist.Brutal
 import com.mewmix.nabu.ui.brutalist.BrutalButton
+import com.mewmix.nabu.ui.brutalist.BrutalSlider
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -167,17 +168,15 @@ fun BookScreen(
                 Text(
                     "Speed: ${ "%.2f".format(speed)}",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Brutal.textBright,
-                    fontFamily = Brutal.mono
+                    color = Brutal.textBright
                 )
-                Slider(
+                BrutalSlider(
                     value = speed,
-                    onValueChange = {
-                        speed = it
-                        SettingsManager.setSpeed(context, it)
+                    onValueChange = { newSpeed ->
+                        speed = newSpeed
+                        SettingsManager.setSpeed(context, newSpeed)
                     },
-                    valueRange = 0.5f..2.0f,
-                    steps = 15,
+                    range = 0.5f..2.0f,
                     modifier = Modifier.fillMaxWidth()
                 )
             }
@@ -199,7 +198,7 @@ fun BookScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))
                 ) {
-                    Text("Use Pregenerated", color = Brutal.textBright, fontFamily = Brutal.mono)
+                    Text("Use Pregenerated", color = Brutal.textBright)
                     Spacer(modifier = Modifier.weight(1f))
                     Switch(checked = usePregenerated, onCheckedChange = { usePregenerated = it })
                 }
@@ -239,7 +238,7 @@ fun BookScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(p.name, modifier = Modifier.weight(1f), color = Brutal.textBright, fontFamily = Brutal.mono)
+                                Text(p.name, modifier = Modifier.weight(1f), color = Brutal.textBright)
                                 BrutalButton(onClick = {
                                     val uri = Uri.parse(p.uri)
                                     bookViewModel.openDocument(uri)

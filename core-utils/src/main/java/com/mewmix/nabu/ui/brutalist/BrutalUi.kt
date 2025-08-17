@@ -32,7 +32,6 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -57,8 +56,6 @@ object Brutal {
     val textDim = Color(0xFFBDBDBD)
     val textBright = Color(0xFFEFEFEF)
     val crt = Color(0xFFB8FFC8)
-
-    val mono = FontFamily.Monospace
 }
 
 private val PanelShape = RoundedCornerShape(8.dp)
@@ -126,8 +123,7 @@ fun BrutalSection(
             Text(
                 title,
                 color = Brutal.textBright,
-                style = MaterialTheme.typography.titleMedium,
-                fontFamily = Brutal.mono
+                style = MaterialTheme.typography.titleMedium
             )
             Spacer(Modifier.weight(1f))
             Icon(
@@ -160,14 +156,13 @@ fun LabelPlate(
             .border(1.dp, Brutal.hairline, RoundedCornerShape(4.dp))
             .padding(horizontal = 8.dp, vertical = 4.dp)
     ) {
-        Text(
-            text = text.uppercase(),
-            color = Brutal.textBright,
-            style = MaterialTheme.typography.labelSmall,
-            fontFamily = Brutal.mono,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
+            Text(
+                text = text.uppercase(),
+                color = Brutal.textBright,
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
     }
 }
 
@@ -199,7 +194,7 @@ fun BrutalButton(
     ) {
         val contentColor = if (enabled) Brutal.textBright else Brutal.textDim
         CompositionLocalProvider(LocalContentColor provides contentColor) {
-            ProvideTextStyle(MaterialTheme.typography.labelMedium.copy(fontFamily = Brutal.mono)) {
+            ProvideTextStyle(MaterialTheme.typography.labelMedium) {
                 content()
             }
         }
@@ -255,7 +250,7 @@ fun SwitchToggle(
     ) {
         Led(on = checked, colorOn = ledColor)
         Spacer(Modifier.width(8.dp))
-        Text(label, color = Brutal.textDim, fontFamily = Brutal.mono, style = MaterialTheme.typography.labelMedium)
+        Text(label, color = Brutal.textDim, style = MaterialTheme.typography.labelMedium)
         Spacer(Modifier.weight(1f))
         // mechanical slider stub
         Box(
@@ -341,8 +336,8 @@ fun Knob(
                 }
         )
         Spacer(Modifier.height(6.dp))
-        Text(label, color = Brutal.textDim, fontFamily = Brutal.mono, style = MaterialTheme.typography.labelSmall)
-        Text("${((clamped) * 100).roundToInt()}%", color = Brutal.textBright, fontFamily = Brutal.mono, style = MaterialTheme.typography.labelSmall)
+        Text(label, color = Brutal.textDim, style = MaterialTheme.typography.labelSmall)
+        Text("${((clamped) * 100).roundToInt()}%", color = Brutal.textBright, style = MaterialTheme.typography.labelSmall)
     }
 }
 
@@ -410,7 +405,6 @@ fun KnobSelector(
         Text(
             options.getOrNull(selectedIndex) ?: "—",
             color = Brutal.textBright,
-            fontFamily = Brutal.mono,
             style = MaterialTheme.typography.labelSmall,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis
@@ -434,9 +428,55 @@ fun PanelRow(
             .padding(horizontal = 8.dp, vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(name.uppercase(), color = Brutal.textDim, fontFamily = Brutal.mono, style = MaterialTheme.typography.labelSmall)
+        Text(name.uppercase(), color = Brutal.textDim, style = MaterialTheme.typography.labelSmall)
         Spacer(Modifier.weight(1f))
         right()
+    }
+}
+
+@Composable
+fun BrutalSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    modifier: Modifier = Modifier,
+    range: ClosedFloatingPointRange<Float> = 0f..1f
+) {
+    val interactionSource = remember { MutableInteractionSource() }
+    Canvas(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(24.dp)
+            .pointerInput(interactionSource) {
+                detectDragGestures { change, _ ->
+                    // map x position to value in range
+                    val newValue = (change.position.x / size.width)
+                        .coerceIn(0f, 1f) * (range.endInclusive - range.start) + range.start
+                    onValueChange(newValue)
+                }
+            }
+    ) {
+        val trackY = center.y
+        // track
+        drawLine(
+            color = Brutal.panelBg,
+            start = Offset(0f, trackY),
+            end = Offset(size.width, trackY),
+            strokeWidth = 12f,
+            cap = StrokeCap.Round
+        )
+        // thumb
+        val thumbX = ((value - range.start) / (range.endInclusive - range.start)) * size.width
+        drawRect(
+            color = Brutal.steel,
+            topLeft = Offset(thumbX - 12f, trackY - 12f),
+            size = Size(24f, 24f)
+        )
+        drawRect(
+            color = Brutal.hairline,
+            topLeft = Offset(thumbX - 12f, trackY - 12f),
+            size = Size(24f, 24f),
+            style = Stroke(width = 2f)
+        )
     }
 }
 
