@@ -104,13 +104,7 @@ class MyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         DynamicColors.applyToActivitiesIfAvailable(this)
-      }
-  }
-}
-}
-}
-}
-}
+    }
 }
 
 private fun showPlaybackNotification(context: Context) {
@@ -609,13 +603,4 @@ fun BasicScreen(
         }
     }
 }
-
-
-//@Preview(showBackground = true)
-//@Composable
-//fun ScreenPreview() {
-//    MainScreen(
-//        session = TODO(),
-//        onGenerateAudio = { _, _, _, _, _, _ -> }
-//    )
-//}
+}

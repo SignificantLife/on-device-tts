@@ -20,6 +20,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.*
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
@@ -29,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.PI
 import kotlin.math.atan2
 import kotlin.math.cos
+import kotlin.math.min
 import kotlin.math.roundToInt
 import kotlin.math.sin
 
@@ -132,7 +134,7 @@ fun Led(
             .size(size)
             .padding(1.dp)
     ) {
-        val r = size.minDimension.toPx() / 2f
+        val r = min(this.size.width, this.size.height) / 2f
         drawCircle(colorOff, r)
         drawCircle(colorOn.copy(alpha = anim.value), r * 0.92f, blendMode = BlendMode.Screen)
     }
@@ -231,7 +233,7 @@ fun Knob(
                     // dial
                     drawCircle(Brutal.steel.copy(alpha = 0.15f))
                     // ticks
-                    val radius = size.minDimension / 2.1f
+                    val radius = min(size.width, size.height) / 2.1f
                     val tickCount = steps
                     for (i in 0 until tickCount) {
                         val a = Math.toRadians((minAngleDeg + angleRange * (i / (tickCount - 1f))).toDouble()).toFloat()
@@ -365,9 +367,10 @@ fun RadialOscilloscope(
             .background(Brutal.panelHl, RoundedCornerShape(8.dp))
             .border(1.dp, Brutal.panelStroke, RoundedCornerShape(8.dp))
             .drawBehind {
+                /*
                 // subtle radial grid
                 val center = Offset(size.width / 2, size.height / 2)
-                val radius = size.minDimension / 2f
+                val radius = min(size.width, size.height) / 2f
                 drawCircle(gridColor.copy(alpha = 0.3f), radius = radius, center = center, style = Stroke(1f))
                 drawCircle(gridColor.copy(alpha = 0.2f), radius = radius / 2, center = center, style = Stroke(1f))
                 for (i in 0 until 8) {
@@ -376,11 +379,13 @@ fun RadialOscilloscope(
                     val p2 = Offset(center.x + cos(angle) * radius, center.y + sin(angle) * radius)
                     drawLine(gridColor.copy(alpha = 0.15f), p1, p2)
                 }
+                */
             }
     ) {
+        /*
         Canvas(Modifier.fillMaxSize().padding(4.dp)) {
             val center = Offset(size.width / 2, size.height / 2)
-            val radius = size.minDimension / 2f
+            val radius = min(size.width, size.height) / 2f
             val path = Path()
             var first = true
             for (i in 0 until numSamples) {
@@ -398,6 +403,7 @@ fun RadialOscilloscope(
             }
             drawPath(path, traceColor, style = Stroke(width = lineWidth, cap = StrokeCap.Round))
         }
+        */
     }
 }
 
@@ -473,4 +479,3 @@ fun BookPlayerInstruments(
         }
     }
 }
-
