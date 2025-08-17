@@ -30,6 +30,7 @@ import com.example.nabu.utils.*
 import com.example.nabu.ui.components.ProgressDialog
 import com.example.nabu.viewmodel.BookViewModel
 import kotlinx.coroutines.launch
+import com.mewmix.nabu.ui.brutalist.PanelBox
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -123,13 +124,17 @@ fun BookScreen(
         }
     }
 
-    LazyColumn(
+    PanelBox(
+        title = "Book · Reader",
         modifier = Modifier
             .fillMaxSize()
-            .padding(dimensionResource(id = R.dimen.padding_large)),
-        verticalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_medium)),
-        state = listState
+            .padding(dimensionResource(id = R.dimen.padding_large))
     ) {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            verticalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_medium)),
+            state = listState
+        ) {
         item {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(dimensionResource(id = R.dimen.padding_medium))) {
@@ -576,6 +581,7 @@ fun BookScreen(
         }
 
         // Debug logs moved to dedicated screen
+    }
     }
 
     if (isPregenerating) {

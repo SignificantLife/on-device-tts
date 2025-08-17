@@ -46,6 +46,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.example.kokoro.chat.MessageBubble
 import com.example.nabu.utils.PlayerState
 import com.example.nabu.utils.PcmTap
@@ -103,7 +104,8 @@ fun ChatTtsScreen(
             )
         }
     ) { paddingValues ->
-        Column(
+        PanelBox(
+            title = "Chat · TTS",
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
@@ -245,4 +247,5 @@ fun ChatTtsScreen(
             }
         }
     }
+}
 }

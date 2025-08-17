@@ -42,6 +42,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.example.nabu.utils.InterpolationMode
 import com.example.nabu.utils.PhonemeConverter
 import com.example.nabu.utils.KittenPhonemizer
@@ -96,21 +97,24 @@ fun MixerScreen(
     var weights by remember { mutableStateOf(initial.second) }
     var interpolationMode by remember { mutableStateOf(initial.third) }
 
-    Column(
+    PanelBox(
+        title = "Mixer · Styles",
         modifier = Modifier
             .padding(16.dp)
             .fillMaxSize()
-            .verticalScroll(scrollState),
-        verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        TextField(
+        Column(
+            modifier = Modifier.verticalScroll(scrollState),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
+        ) {
+            TextField(
             value = text,
             onValueChange = { text = it },
             minLines = 3,
             maxLines = 12,
             label = { Text("Text to speak") },
             modifier = Modifier.fillMaxWidth()
-        )
+            )
 
         Text("Speed: $speed")
         Slider(
@@ -209,6 +213,7 @@ fun MixerScreen(
 
         // Debug logs moved to dedicated screen
     }
+}
 }
 
 private fun loadStyleConfig(context: android.content.Context): Triple<List<String>, Map<String, Float>, InterpolationMode>? {
