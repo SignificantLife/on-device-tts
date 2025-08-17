@@ -167,8 +167,7 @@ fun BookScreen(
                 Text(
                     "Speed: ${ "%.2f".format(speed)}",
                     style = MaterialTheme.typography.bodyMedium,
-                    color = Brutal.textBright,
-                    fontFamily = Brutal.mono
+                    color = Brutal.textBright
                 )
                 Slider(
                     value = speed,
@@ -199,7 +198,7 @@ fun BookScreen(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier.padding(top = dimensionResource(id = R.dimen.padding_small))
                 ) {
-                    Text("Use Pregenerated", color = Brutal.textBright, fontFamily = Brutal.mono)
+                    Text("Use Pregenerated", color = Brutal.textBright)
                     Spacer(modifier = Modifier.weight(1f))
                     Switch(checked = usePregenerated, onCheckedChange = { usePregenerated = it })
                 }
@@ -239,7 +238,7 @@ fun BookScreen(
                                 verticalAlignment = Alignment.CenterVertically,
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text(p.name, modifier = Modifier.weight(1f), color = Brutal.textBright, fontFamily = Brutal.mono)
+                                Text(p.name, modifier = Modifier.weight(1f), color = Brutal.textBright)
                                 BrutalButton(onClick = {
                                     val uri = Uri.parse(p.uri)
                                     bookViewModel.openDocument(uri)
