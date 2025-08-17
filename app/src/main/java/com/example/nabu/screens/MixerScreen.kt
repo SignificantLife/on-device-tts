@@ -398,7 +398,6 @@ fun StyleSelector(
         }
     }
 }
-}
 
 @Composable
 fun WeightSliders(
