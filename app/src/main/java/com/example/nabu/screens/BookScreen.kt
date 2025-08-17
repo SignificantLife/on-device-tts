@@ -25,6 +25,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.nabu.R
 import com.example.nabu.utils.*
 import com.example.nabu.ui.components.ProgressDialog
+import com.example.nabu.ui.components.RadialWaveformVisualizer
 import com.example.nabu.viewmodel.BookViewModel
 import kotlinx.coroutines.launch
 import com.mewmix.nabu.ui.brutalist.PanelBox
@@ -32,6 +33,7 @@ import com.mewmix.nabu.ui.brutalist.BrutalSection
 import com.mewmix.nabu.ui.brutalist.Brutal
 import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.mewmix.nabu.ui.brutalist.BrutalSlider
+import androidx.compose.ui.unit.dp
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -123,6 +125,10 @@ fun BookScreen(
         if (currentLine >= 0) {
             listState.animateScrollToItem(currentLine)
         }
+    }
+
+    LaunchedEffect(playerState) {
+        PcmTap.enabled = playerState == PlayerState.PLAYING
     }
 
     PanelBox(
@@ -489,6 +495,15 @@ fun BookScreen(
                     Text(if (isPregenerating) "Pre-generating..." else "Pregenerate")
                 }
             }
+        }
+
+        item {
+            RadialWaveformVisualizer(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(150.dp),
+                visible = playerState == PlayerState.PLAYING
+            )
         }
 
         itemsIndexed(lines) { index, line ->
