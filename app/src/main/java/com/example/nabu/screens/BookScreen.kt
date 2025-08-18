@@ -290,7 +290,7 @@ fun BookScreen(
                 maxItemsInEachRow = 3
             ) {
                 BrutalButton(onClick = { launcher.launch(arrayOf("text/plain", "application/epub+zip")) }) {
-                    Text("Open")
+                    Text("OPEN")
                 }
                 BrutalButton(
                     onClick = {
@@ -341,9 +341,9 @@ fun BookScreen(
                 ) {
                     Text(
                         when (playerState) {
-                            PlayerState.IDLE -> "Play"
-                            PlayerState.PLAYING -> "Pause"
-                            PlayerState.PAUSED -> "Resume"
+                            PlayerState.IDLE -> "PLAY"
+                            PlayerState.PLAYING -> "PAUSE"
+                            PlayerState.PAUSED -> "RESUME"
                         }
                     )
                 }
@@ -353,7 +353,7 @@ fun BookScreen(
                     },
                     enabled = playerState != PlayerState.IDLE
                 ) {
-                    Text("Stop")
+                    Text("STOP")
                 }
                 BrutalButton(
                     onClick = {
@@ -402,7 +402,7 @@ fun BookScreen(
                     },
                     enabled = lines.isNotEmpty() && !isProcessing
                 ) {
-                    Text(if (isProcessing) "Saving..." else "Save")
+                    Text(if (isProcessing) "SAVING..." else "SAVE")
                 }
                 if (selectedLines.isNotEmpty()) {
                     BrutalButton(
@@ -453,7 +453,7 @@ fun BookScreen(
                         },
                         enabled = !isProcessing
                     ) {
-                        Text(if (isProcessing) "Saving..." else "Save Clip")
+                        Text(if (isProcessing) "SAVING..." else "SAVE CLIP")
                     }
                 }
                 BrutalButton(
@@ -494,7 +494,7 @@ fun BookScreen(
                     },
                     enabled = !isPregenerating && lines.isNotEmpty() && bookUri != null
                 ) {
-                    Text(if (isPregenerating) "Pre-generating..." else "Pregenerate")
+                    Text(if (isPregenerating) "PRE-GENERATING..." else "PREGENERATE")
                 }
             }
         }

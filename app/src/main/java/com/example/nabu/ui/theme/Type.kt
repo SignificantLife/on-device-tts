@@ -21,6 +21,12 @@ val AppTypography = Typography(
         fontSize = 22.sp,
         lineHeight = 28.sp
     ),
+    titleMedium = TextStyle(
+        fontFamily = Quicksand,
+        fontWeight = FontWeight.Bold,
+        fontSize = 18.sp,
+        lineHeight = 24.sp
+    ),
     bodyLarge = TextStyle(
         fontFamily = Quicksand,
         fontSize = 16.sp,
