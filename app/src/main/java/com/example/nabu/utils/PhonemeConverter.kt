@@ -44,11 +44,11 @@ class PhonemeConverter(context: Context) {
         val cleanUpper = word.replace(Regex("[^a-zA-Z']"), "").uppercase()
         val phonemesFromDict = phonemeMap[cleanUpper]
 
-        val wasAllLowercase = word.all { it.isLowerCase() }
-        if (phonemesFromDict != null && wasAllLowercase && word.length <= 3) {
+        val isAllUppercase = word.all { it.isUpperCase() }
+        if (phonemesFromDict != null && !isAllUppercase && word.length <= 3) {
             val stressCount = phonemesFromDict.count { it == 'ˈ' || it == 'ˌ' }
             if (stressCount > 1) {
-                return fallbackTranscribe(word)
+                return fallbackTranscribe(word.lowercase())
             }
         }
 
