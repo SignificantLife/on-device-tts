@@ -18,7 +18,7 @@ import com.mewmix.nabu.ui.brutalist.PanelBox
 fun MoreScreen(onNavigate: (String) -> Unit) {
     val context = LocalContext.current
     PanelBox(
-        title = "More",
+        title = "MORE",
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
@@ -28,32 +28,32 @@ fun MoreScreen(onNavigate: (String) -> Unit) {
                 onClick = { onNavigate("Creations") },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Creations")
+                Text("CREATIONS")
             }
             BrutalButton(
                 onClick = { onNavigate("Settings") },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Settings")
+                Text("SETTINGS")
             }
             BrutalButton(
                 onClick = { onNavigate("Models") },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Models")
+                Text("MODELS")
             }
             BrutalButton(
                 onClick = { onNavigate("Credits") },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Credits")
+                Text("CREDITS")
             }
             if (SettingsManager.isDebug(context)) {
                 BrutalButton(
                     onClick = { onNavigate("DebugLog") },
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text("Debug Log")
+                    Text("DEBUG LOG")
                 }
             }
         }

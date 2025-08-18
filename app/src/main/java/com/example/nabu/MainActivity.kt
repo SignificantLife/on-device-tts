@@ -535,7 +535,7 @@ fun BasicScreen(
             }
         }
 
-        PanelRow(name = "Speed") {
+        PanelRow(name = "SPEED") {
             BrutalSlider(
                 value = speed,
                 onValueChange = {
