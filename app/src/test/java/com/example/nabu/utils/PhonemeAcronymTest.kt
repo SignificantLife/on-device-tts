@@ -22,5 +22,11 @@ class PhonemeAcronymTest {
         val phonemes = converter.phonemize("it")
         assertEquals("ɪt", phonemes)
     }
+
+    @Test
+    fun `It at sentence start is not treated as initialism`() {
+        val phonemes = converter.phonemize("It")
+        assertEquals("ɪt", phonemes)
+    }
 }
 
