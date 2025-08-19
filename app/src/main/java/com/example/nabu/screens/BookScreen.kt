@@ -74,6 +74,7 @@ fun BookScreen(
     var isProcessing by remember { mutableStateOf(false) }
     var isPregenerating by remember { mutableStateOf(false) }
     var preGenProgress by remember { mutableFloatStateOf(0f) }
+    var isPreparing by remember { mutableStateOf(false) }
 
     var showSettings by remember { mutableStateOf(false) }
     var showProjectSection by remember { mutableStateOf(false) }
@@ -132,6 +133,9 @@ fun BookScreen(
 
     LaunchedEffect(playerState) {
         PcmTap.enabled = playerState == PlayerState.PLAYING
+        if (playerState != PlayerState.IDLE) {
+            isPreparing = false
+        }
     }
 
     PanelBox(
@@ -296,6 +300,7 @@ fun BookScreen(
                     if (playerState == PlayerState.PAUSED) {
                         bookViewModel.audioPlayer.stop()
                     }
+                    isPreparing = true
                     bookViewModel.startPlayback(
                         session = session,
                         phonemeConverter = phonemeConverter,
@@ -319,8 +324,11 @@ fun BookScreen(
                 }
                 when (playerState) {
                     PlayerState.IDLE -> {
-                        BrutalButton(onClick = { startPlaybackAction() }, enabled = lines.isNotEmpty()) {
-                            Text("PLAY")
+                        BrutalButton(
+                            onClick = { startPlaybackAction() },
+                            enabled = lines.isNotEmpty() && !isPreparing
+                        ) {
+                            Text(if (isPreparing) "GPU PROCESSING..." else "PLAY")
                         }
                     }
                     PlayerState.PLAYING -> {
@@ -350,8 +358,11 @@ fun BookScreen(
                         }
                     }
                     PlayerState.PAUSED -> {
-                        BrutalButton(onClick = { startPlaybackAction() }, enabled = lines.isNotEmpty()) {
-                            Text("PLAY")
+                        BrutalButton(
+                            onClick = { startPlaybackAction() },
+                            enabled = lines.isNotEmpty() && !isPreparing
+                        ) {
+                            Text(if (isPreparing) "GPU PROCESSING..." else "PLAY")
                         }
                         BrutalButton(onClick = { bookViewModel.stopPlayback() }) {
                             Text("STOP")
