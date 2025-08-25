@@ -35,6 +35,7 @@ import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.mewmix.nabu.ui.brutalist.BrutalSlider
 import com.mewmix.nabu.ui.brutalist.SwitchToggle
 import androidx.compose.ui.unit.dp
+import com.example.nabu.ChatActivity
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -468,6 +469,21 @@ fun BookScreen(
                         enabled = !isProcessing
                     ) {
                         Text(if (isProcessing) "SAVING..." else "SAVE CLIP")
+                    }
+                    BrutalButton(
+                        onClick = {
+                            val selectedText = selectedLines.sorted().joinToString("\n") { lines[it] }
+                            val title = bookUri?.lastPathSegment?.substringBeforeLast('.') ?: "unknown"
+                            val prompt = "Tell me a little bit more about this passage from: $title\n\n$selectedText"
+                            val intent = Intent(context, ChatActivity::class.java).apply {
+                                putExtra(ChatActivity.EXTRA_INITIAL_PROMPT, prompt)
+                            }
+                            context.startActivity(intent)
+                            selectedLines.clear()
+                        },
+                        enabled = !isProcessing
+                    ) {
+                        Text("CHAT")
                     }
                 }
                 BrutalButton(
