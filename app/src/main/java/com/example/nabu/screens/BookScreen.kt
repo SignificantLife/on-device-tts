@@ -3,6 +3,7 @@ package com.example.nabu.screens
 import ai.onnxruntime.OrtSession
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -35,6 +36,7 @@ import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.mewmix.nabu.ui.brutalist.BrutalSlider
 import com.mewmix.nabu.ui.brutalist.SwitchToggle
 import androidx.compose.ui.unit.dp
+import com.example.nabu.ChatActivity
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class, ExperimentalFoundationApi::class)
 @Composable
@@ -469,6 +471,21 @@ fun BookScreen(
                     ) {
                         Text(if (isProcessing) "SAVING..." else "SAVE CLIP")
                     }
+                    BrutalButton(
+                        onClick = {
+                            val selectedText = selectedLines.sorted().joinToString("\n") { lines[it] }
+                            val title = bookUri?.let { getDisplayName(context, it).substringBeforeLast('.') } ?: "unknown"
+                            val prompt = "Tell me a little bit more about this passage from: $title\n\n$selectedText"
+                            val intent = Intent(context, ChatActivity::class.java).apply {
+                                putExtra(ChatActivity.EXTRA_INITIAL_PROMPT, prompt)
+                            }
+                            context.startActivity(intent)
+                            selectedLines.clear()
+                        },
+                        enabled = !isProcessing
+                    ) {
+                        Text("CHAT")
+                    }
                 }
                 BrutalButton(
                     onClick = {
@@ -609,6 +626,13 @@ fun BookScreen(
             progress = preGenProgress
         )
     }
+}
+
+private fun getDisplayName(context: android.content.Context, uri: Uri): String {
+    return context.contentResolver
+        .query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+        ?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else uri.lastPathSegment ?: "document" }
+        ?: uri.lastPathSegment ?: "document"
 }
 
 

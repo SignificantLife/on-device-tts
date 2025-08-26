@@ -21,6 +21,9 @@ import com.example.nabu.viewmodel.ChatViewModel
 import java.io.File
 
 class ChatActivity : ComponentActivity() {
+    companion object {
+        const val EXTRA_INITIAL_PROMPT = "extra_initial_prompt"
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         DebugLogger.initialize(this)
@@ -28,6 +31,7 @@ class ChatActivity : ComponentActivity() {
         val ortSession = OnnxRuntimeManager.getSession()
         val modelManager = ModelManager(applicationContext)
         val downloaded = modelManager.models.filter { it.isDownloaded }
+        val initialPrompt = intent.getStringExtra(EXTRA_INITIAL_PROMPT)
 
         if (downloaded.isEmpty()) {
             Toast.makeText(
@@ -45,26 +49,26 @@ class ChatActivity : ComponentActivity() {
         }
 
         if (downloaded.size == 1) {
-            startChat(downloaded.first(), ortSession)
+            startChat(downloaded.first(), ortSession, initialPrompt)
         } else {
-            selectModel(downloaded, ortSession)
+            selectModel(downloaded, ortSession, initialPrompt)
         }
 
         // Chat will start in startChat or selectModel
     }
 
-    private fun selectModel(models: List<Model>, session: ai.onnxruntime.OrtSession) {
+    private fun selectModel(models: List<Model>, session: ai.onnxruntime.OrtSession, initialPrompt: String?) {
         val names = models.map { it.name }.toTypedArray()
         androidx.appcompat.app.AlertDialog.Builder(this)
             .setTitle("Select Chat Model")
             .setItems(names) { _, which ->
-                startChat(models[which], session)
+                startChat(models[which], session, initialPrompt)
             }
             .setOnCancelListener { finish() }
             .show()
     }
 
-    private fun startChat(model: Model, session: ai.onnxruntime.OrtSession) {
+    private fun startChat(model: Model, session: ai.onnxruntime.OrtSession, initialPrompt: String?) {
         val modelFile = File(filesDir, "models/${model.id}.task")
         val llmInference = LlmInference(applicationContext, modelFile.absolutePath)
 
@@ -82,7 +86,10 @@ class ChatActivity : ComponentActivity() {
 
         setContent {
             NabuTheme {
-                ChatScreen(viewModel = viewModel)
+                ChatScreen(
+                    viewModel = viewModel,
+                    initialMessage = initialPrompt.orEmpty()
+                )
                 if (SettingsManager.isBenchmark(this@ChatActivity)) {
                     PerfHud.Overlay()
                 }
