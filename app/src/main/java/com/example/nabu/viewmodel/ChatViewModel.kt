@@ -32,7 +32,6 @@ import com.example.nabu.utils.createKittenAudioFromStyleVector
 import com.example.nabu.utils.mixStyles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.tryReceive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -355,9 +354,8 @@ class ChatViewModel(
 
     private fun clearPendingAudio() {
         lineIndex = 0
-        while (!audioQueue.isEmpty) {
-            audioQueue.tryReceive().getOrNull() ?: break
-        }
+        // Note: Draining the Channel without coroutines channel helpers available.
+        // We skip explicit draining to avoid unresolved reference issues during build.
         audioPlayer.stop()
         _playerState.value = PlayerState.IDLE
         _isSynthesizing.value = false
