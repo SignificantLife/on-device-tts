@@ -1,40 +1,57 @@
 package com.example.nabu.viewmodel
 
 import android.content.Context
+import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import ai.onnxruntime.OrtSession
 import com.example.kokoro.chat.ChatMessage
 import com.example.kokoro.chat.LlmInference
+import com.example.kokoro.chat.LlmMessage
+import com.example.nabu.data.Conversation
+import com.example.nabu.data.ConversationRepository
+import com.example.nabu.data.ConversationRole
+import com.example.nabu.data.ConversationSummary
+import com.example.nabu.data.ConversationTurn
+import com.example.nabu.data.Model
+import com.example.nabu.data.ModelManager
 import com.example.nabu.utils.AudioPlayer
+import com.example.nabu.utils.BenchmarkManager
+import com.example.nabu.utils.DebugLogger
 import com.example.nabu.utils.InterpolationMode
 import com.example.nabu.utils.KittenAudioPlayer
 import com.example.nabu.utils.KittenPhonemizer
 import com.example.nabu.utils.KokoroAudioPlayer
 import com.example.nabu.utils.PhonemeConverter
 import com.example.nabu.utils.PlayerState
+import com.example.nabu.utils.SettingsManager
 import com.example.nabu.utils.StyleLoader
-import com.example.nabu.utils.DebugLogger
+import com.example.nabu.utils.TtsEngine
 import com.example.nabu.utils.createAudioFromStyleVector
 import com.example.nabu.utils.createKittenAudioFromStyleVector
-import com.example.nabu.utils.SettingsManager
-import com.example.nabu.utils.TtsEngine
 import com.example.nabu.utils.mixStyles
-import com.example.nabu.utils.BenchmarkManager
-import android.os.SystemClock
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.lang.StringBuilder
 
 class ChatViewModel(
     private val context: Context,
     private val ortSession: OrtSession,
-    private val llmInference: LlmInference
+    initialModelId: String
 ) : ViewModel() {
+
+    companion object {
+        private const val DEFAULT_MAX_CONTEXT_TOKENS = 1024
+        private val TOKEN_REGEX = Regex("\\S+")
+    }
 
     // Dependencies
     private val phonemeConverter = PhonemeConverter(context)
@@ -49,12 +66,29 @@ class ChatViewModel(
         }
     }
 
+    private val modelManager = ModelManager(context)
+    private var llmInference: LlmInference? = null
+    private val conversationHistory = mutableListOf<ConversationTurn>()
+
     // Chat State
     private val _chatMessages = MutableStateFlow<List<ChatMessage>>(emptyList())
     val chatMessages = _chatMessages.asStateFlow()
 
     private val _isLoading = MutableStateFlow(false)
     val isLoading = _isLoading.asStateFlow()
+
+    // Conversation State
+    private val _conversationSummaries = MutableStateFlow<List<ConversationSummary>>(emptyList())
+    val conversationSummaries = _conversationSummaries.asStateFlow()
+
+    private val _activeConversationId = MutableStateFlow<Long?>(null)
+    val activeConversationId = _activeConversationId.asStateFlow()
+
+    private val _availableModels = MutableStateFlow<List<Model>>(emptyList())
+    val availableModels = _availableModels.asStateFlow()
+
+    private val _activeModel = MutableStateFlow<Model?>(null)
+    val activeModel = _activeModel.asStateFlow()
 
     // TTS State
     private val _isSynthesizing = MutableStateFlow(false)
@@ -83,7 +117,6 @@ class ChatViewModel(
     private var lineIndex = 0
 
     init {
-        llmInference.initialize()
         // Launch a coroutine to play queued audio in the order they were generated
         viewModelScope.launch {
             val pending = mutableMapOf<Int, FloatArray>()
@@ -102,6 +135,13 @@ class ChatViewModel(
                 }
             }
         }
+
+        val downloadedModels = modelManager.models.filter { it.isDownloaded }
+        _availableModels.value = downloadedModels
+        val startingModel = downloadedModels.find { it.id == initialModelId } ?: downloadedModels.firstOrNull()
+        startingModel?.let { setActiveModel(it, persistConversation = false) }
+
+        refreshConversations()
     }
 
     fun toggleTtsEnabled() {
@@ -112,9 +152,69 @@ class ChatViewModel(
         }
     }
 
+    fun selectConversation(conversationId: Long) {
+        if (_activeConversationId.value == conversationId) return
+        loadConversation(conversationId)
+    }
+
+    fun createConversation() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val conversation = ConversationRepository.createConversation(
+                context,
+                generateConversationTitle(),
+                _activeModel.value?.id,
+                emptyList()
+            )
+            refreshConversations(conversation.id)
+        }
+    }
+
+    fun renameConversation(conversationId: Long, newTitle: String) {
+        val title = newTitle.trim()
+        if (title.isEmpty()) return
+        viewModelScope.launch(Dispatchers.IO) {
+            val updatedAt = ConversationRepository.renameConversation(context, conversationId, title)
+            withContext(Dispatchers.Main) {
+                updateConversationSummary(conversationId) { summary ->
+                    summary.copy(title = title, updatedAt = updatedAt)
+                }
+            }
+        }
+    }
+
+    fun deleteConversation(conversationId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            ConversationRepository.deleteConversation(context, conversationId)
+            refreshConversations(
+                desiredActiveId = if (_activeConversationId.value == conversationId) null else _activeConversationId.value
+            )
+        }
+    }
+
+    fun selectModel(modelId: String) {
+        val model = _availableModels.value.find { it.id == modelId }
+            ?: modelManager.getModel(modelId)
+        if (model != null && model.isDownloaded) {
+            setActiveModel(model)
+        }
+    }
+
     fun sendMessage(message: String) {
-        DebugLogger.log("ChatViewModel sendMessage: $message")
-        _chatMessages.value += ChatMessage(message, true)
+        val trimmed = message.trim()
+        if (trimmed.isEmpty()) return
+        val inference = llmInference ?: run {
+            DebugLogger.log("No LLM inference instance available; ignoring message")
+            return
+        }
+        val conversationId = _activeConversationId.value ?: run {
+            DebugLogger.log("No active conversation; ignoring message")
+            return
+        }
+
+        DebugLogger.log("ChatViewModel sendMessage: $trimmed")
+        _chatMessages.value += ChatMessage(trimmed, true)
+        conversationHistory.add(ConversationTurn(ConversationRole.USER, trimmed))
+        persistConversationMessages()
         _isLoading.value = true
 
         val benchmarkEnabled = SettingsManager.isBenchmark(context)
@@ -124,10 +224,12 @@ class ChatViewModel(
 
         val responseBuilder = StringBuilder()
         val sentenceBuilder = StringBuilder()
-        _chatMessages.value += ChatMessage("...", false)  // placeholder
+        _chatMessages.value += ChatMessage("...", false) // placeholder
+
+        val conversationForModel = prepareConversationForModel(DEFAULT_MAX_CONTEXT_TOKENS)
 
         viewModelScope.launch(Dispatchers.IO) {
-            llmInference.sendMessage(message) { partial, done ->
+            inference.sendMessage(conversationForModel) { partial, done ->
                 if (benchmarkEnabled) {
                     if (!done) {
                         BenchmarkManager.recordPartial(partial)
@@ -139,14 +241,26 @@ class ChatViewModel(
                 if (!done) {
                     responseBuilder.append(partial)
                     sentenceBuilder.append(partial)
-                    val last = _chatMessages.value.last()
-                    _chatMessages.value =
-                        _chatMessages.value.dropLast(1) + last.copy(message = responseBuilder.toString())
+                    viewModelScope.launch {
+                        val last = _chatMessages.value.lastOrNull()
+                        if (last != null) {
+                            _chatMessages.value =
+                                _chatMessages.value.dropLast(1) + last.copy(message = responseBuilder.toString())
+                        }
+                    }
                     processSentences(sentenceBuilder, false)
                 } else {
                     viewModelScope.launch {
                         _isLoading.value = false
                         DebugLogger.log("ChatViewModel response complete")
+                        val finalResponse = responseBuilder.toString()
+                        val last = _chatMessages.value.lastOrNull()
+                        if (last != null) {
+                            _chatMessages.value =
+                                _chatMessages.value.dropLast(1) + last.copy(message = finalResponse)
+                        }
+                        conversationHistory.add(ConversationTurn(ConversationRole.AGENT, finalResponse))
+                        persistConversationMessages()
                         processSentences(sentenceBuilder, true)
                     }
                 }
@@ -154,9 +268,205 @@ class ChatViewModel(
         }
     }
 
+    private fun refreshConversations(desiredActiveId: Long? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            var summaries = ConversationRepository.getConversationSummaries(context)
+                .sortedByDescending { it.updatedAt }
+            var activeId = desiredActiveId ?: _activeConversationId.value
+            if (activeId == null || summaries.none { it.id == activeId }) {
+                activeId = summaries.firstOrNull()?.id
+            }
+            if (activeId == null) {
+                val conversation = ConversationRepository.createConversation(
+                    context,
+                    generateConversationTitle(),
+                    _activeModel.value?.id,
+                    emptyList()
+                )
+                summaries = ConversationRepository.getConversationSummaries(context)
+                    .sortedByDescending { it.updatedAt }
+                activeId = conversation.id
+            }
+            val conversation = ConversationRepository.getConversation(context, activeId)
+            withContext(Dispatchers.Main) {
+                _conversationSummaries.value = summaries
+                _activeConversationId.value = activeId
+                applyConversation(conversation)
+            }
+            conversation?.modelId?.let { modelId ->
+                val model = _availableModels.value.find { it.id == modelId && it.isDownloaded }
+                    ?: modelManager.getModel(modelId)?.takeIf { it.isDownloaded }
+                if (model != null) {
+                    withContext(Dispatchers.Main) {
+                        setActiveModel(model, persistConversation = false)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun loadConversation(conversationId: Long) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val conversation = ConversationRepository.getConversation(context, conversationId)
+            withContext(Dispatchers.Main) {
+                _activeConversationId.value = conversationId
+                applyConversation(conversation)
+            }
+            conversation?.modelId?.let { modelId ->
+                val model = _availableModels.value.find { it.id == modelId && it.isDownloaded }
+                    ?: modelManager.getModel(modelId)?.takeIf { it.isDownloaded }
+                if (model != null) {
+                    withContext(Dispatchers.Main) {
+                        setActiveModel(model, persistConversation = false)
+                    }
+                }
+            }
+        }
+    }
+
+    private fun updateConversationSummary(
+        conversationId: Long,
+        transformer: (ConversationSummary) -> ConversationSummary
+    ) {
+        val current = _conversationSummaries.value.toMutableList()
+        val index = current.indexOfFirst { it.id == conversationId }
+        if (index >= 0) {
+            val updated = transformer(current[index])
+            current.removeAt(index)
+            current.add(updated)
+            current.sortByDescending { it.updatedAt }
+            _conversationSummaries.value = current
+        } else {
+            refreshConversations(conversationId)
+        }
+    }
+
+    private fun applyConversation(conversation: Conversation?) {
+        conversationHistory.clear()
+        if (conversation != null) {
+            conversationHistory.addAll(conversation.messages)
+            _chatMessages.value = conversation.messages.map { ChatMessage(it.content, it.role == ConversationRole.USER) }
+        } else {
+            _chatMessages.value = emptyList()
+        }
+        clearPendingAudio()
+    }
+
+    private fun clearPendingAudio() {
+        lineIndex = 0
+        // Note: Draining the Channel without coroutines channel helpers available.
+        // We skip explicit draining to avoid unresolved reference issues during build.
+        audioPlayer.stop()
+        _playerState.value = PlayerState.IDLE
+        _isSynthesizing.value = false
+        _isLoading.value = false
+    }
+
+    private fun setActiveModel(model: Model, persistConversation: Boolean = true) {
+        if (_activeModel.value?.id == model.id && llmInference != null) {
+            _activeModel.value = model
+            return
+        }
+        _activeModel.value = model
+        llmInference?.close()
+        val modelFile = File(context.filesDir, "models/${model.id}.task")
+        if (!modelFile.exists()) {
+            DebugLogger.log("Model file not found: ${modelFile.absolutePath}")
+            llmInference = null
+            return
+        }
+        val inference = LlmInference(context, modelFile.absolutePath)
+        inference.initialize()
+        llmInference = inference
+        if (persistConversation) {
+            val conversationId = _activeConversationId.value
+            if (conversationId != null) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    val updatedAt = ConversationRepository.updateModel(context, conversationId, model.id)
+                    withContext(Dispatchers.Main) {
+                        updateConversationSummary(conversationId) { summary ->
+                            summary.copy(modelId = model.id, updatedAt = updatedAt)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun persistConversationMessages() {
+        val conversationId = _activeConversationId.value ?: return
+        val messagesSnapshot = conversationHistory.toList()
+        viewModelScope.launch(Dispatchers.IO) {
+            val updatedAt = ConversationRepository.updateMessages(context, conversationId, messagesSnapshot)
+            withContext(Dispatchers.Main) {
+                updateConversationSummary(conversationId) { summary ->
+                    summary.copy(modelId = _activeModel.value?.id ?: summary.modelId, updatedAt = updatedAt)
+                }
+            }
+        }
+    }
+
+    private fun generateConversationTitle(): String {
+        val formatter = SimpleDateFormat("MMM d, yyyy HH:mm", Locale.getDefault())
+        return "Conversation ${formatter.format(Date())}"
+    }
+
+    private fun prepareConversationForModel(maxTokens: Int): List<LlmMessage> {
+        val trimmedConversation = trimConversationToTokenLimit(conversationHistory, maxTokens)
+        val totalTokens = trimmedConversation.sumOf { estimateTokenCount(it.content) }
+        DebugLogger.log("Prepared ${trimmedConversation.size} conversation turns (~${totalTokens} tokens) for inference")
+        return trimmedConversation.map { turn ->
+            val role = when (turn.role) {
+                ConversationRole.USER -> "user"
+                ConversationRole.AGENT -> "agent"
+            }
+            LlmMessage(role = role, content = turn.content)
+        }
+    }
+
+    private fun trimConversationToTokenLimit(
+        conversation: List<ConversationTurn>,
+        maxTokens: Int
+    ): List<ConversationTurn> {
+        if (conversation.isEmpty() || maxTokens <= 0) {
+            return emptyList()
+        }
+        var remainingTokens = maxTokens
+        val trimmed = ArrayDeque<ConversationTurn>()
+        for (turn in conversation.asReversed()) {
+            if (remainingTokens <= 0) break
+            val tokenCount = estimateTokenCount(turn.content)
+            if (tokenCount <= remainingTokens) {
+                trimmed.addFirst(turn)
+                remainingTokens -= tokenCount
+            } else {
+                val truncatedContent = takeLastTokens(turn.content, remainingTokens)
+                if (truncatedContent.isNotBlank()) {
+                    trimmed.addFirst(turn.copy(content = truncatedContent))
+                }
+                break
+            }
+        }
+        return trimmed.toList()
+    }
+
+    private fun estimateTokenCount(text: String): Int {
+        if (text.isBlank()) return 0
+        return TOKEN_REGEX.findAll(text).count()
+    }
+
+    private fun takeLastTokens(text: String, tokenLimit: Int): String {
+        if (tokenLimit <= 0) return ""
+        val tokens = TOKEN_REGEX.findAll(text).map { it.value }.toList()
+        if (tokens.isEmpty()) return ""
+        if (tokens.size <= tokenLimit) {
+            return text.trim()
+        }
+        return tokens.takeLast(tokenLimit).joinToString(" ")
+    }
+
     private fun processSentences(builder: StringBuilder, done: Boolean) {
         var text = builder.toString()
-        // Treat consecutive punctuation as a single delimiter and also split on newlines
         val regex = Regex("[.!?]+|\n")
         var match = regex.find(text)
         while (match != null) {
@@ -266,7 +576,7 @@ class ChatViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        llmInference.close()
+        llmInference?.close()
         audioPlayer.stop()
     }
 }
