@@ -18,7 +18,7 @@
     "description": "An 8-bit variant of Gemma3 270M IT for Android",
     "repo": "litert-community/gemma-3-270m-it",
     "downloadUrl": "https://huggingface.co/litert-community/gemma-3-270m-it/resolve/main/gemma3-270m-it-q8.task",
-    "gated": false
+    "gated": true
   },
   "qwen2.5-1.5b-instruct-q8": {
     "name": "Qwen2.5 1.5B Instruct q8",

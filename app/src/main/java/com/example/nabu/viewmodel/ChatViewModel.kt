@@ -1,10 +1,10 @@
 package com.example.nabu.viewmodel
 
+import ai.onnxruntime.OrtSession
 import android.content.Context
 import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import ai.onnxruntime.OrtSession
 import com.example.kokoro.chat.ChatMessage
 import com.example.kokoro.chat.LlmInference
 import com.example.kokoro.chat.LlmMessage
@@ -32,7 +32,6 @@ import com.example.nabu.utils.createKittenAudioFromStyleVector
 import com.example.nabu.utils.mixStyles
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
-import kotlinx.coroutines.channels.tryReceive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -41,7 +40,6 @@ import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.lang.StringBuilder
 
 class ChatViewModel(
     private val context: Context,
