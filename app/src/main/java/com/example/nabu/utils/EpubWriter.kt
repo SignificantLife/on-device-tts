@@ -19,6 +19,7 @@ object EpubWriter {
         return try {
             resolver.openOutputStream(uri, "wt")?.use { outputStream ->
                 writeEpub(outputStream, title.ifBlank { "Edited Book" }, paragraphs)
+                true
             } ?: false
         } catch (e: Exception) {
             false

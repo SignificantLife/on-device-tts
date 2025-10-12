@@ -99,9 +99,10 @@ fun BookScreen(
     var pendingSaveDisplayName by remember { mutableStateOf<String?>(null) }
 
     fun buildEditedDisplayName(name: String): String {
+        val currentBookDisplayName = bookDisplayName
         val trimmed = name.trim().ifBlank {
-            bookDisplayName
-                ?.substringBeforeLast('.', bookDisplayName)
+            currentBookDisplayName
+                ?.substringBeforeLast('.', currentBookDisplayName)
                 ?.takeIf { it.isNotBlank() }
                 ?.let { "${it}_edited" }
                 ?: "edited_book"
