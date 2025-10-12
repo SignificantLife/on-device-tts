@@ -149,8 +149,9 @@ fun BookScreen(
     }
 
     LaunchedEffect(bookDisplayName) {
-        val suggestion = bookDisplayName
-            ?.substringBeforeLast('.', bookDisplayName)
+        val currentBookDisplayName = bookDisplayName
+        val suggestion = currentBookDisplayName
+            ?.substringBeforeLast('.', currentBookDisplayName)
             ?.takeIf { it.isNotBlank() }
             ?.let { "${it}_edited.epub" }
             ?: "edited_book.epub"
