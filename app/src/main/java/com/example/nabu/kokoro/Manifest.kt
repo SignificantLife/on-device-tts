@@ -42,11 +42,11 @@ object ManifestProvider {
             ),
             ManifestFile(
                 id = "kokoro_int8",
-                url = "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_uint8f16.onnx?download=true",
-                sha256 = "883333e03c597584b532eebea0f8310f25f0c9ade58fe864792c12d969944a9a",
-                sizeBytes = 119_537_664,
+                url = "https://huggingface.co/onnx-community/Kokoro-82M-v1.0-ONNX/resolve/main/onnx/model_uint8.onnx?download=true",
+                sha256 = "6607a397d77b8514065420b7c1e7320117f7aabfdb45ce15f0050c5b0fe75aea",
+                sizeBytes = 177_464_632,
                 dest = "models/kokoro/model_int8.onnx",
-                notes = "CPU fallback; weights INT8, activations FP16/32"
+                notes = "CPU fallback; INT8 weights (original release)"
             )
         ),
         io = Manifest.Io(
