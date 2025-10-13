@@ -27,6 +27,8 @@ object OnnxRuntimeManager {
     private var manifest: Manifest = ManifestProvider.kokoroV1()
     @Volatile
     private var engine: KokoroEngine? = null
+    @Volatile
+    private var status: RuntimeStatus? = null
 
     suspend fun initialize(context: Context, preferred: RunEp? = null): Result<KokoroBundle> =
         mutex.withLock {
@@ -48,8 +50,13 @@ object OnnxRuntimeManager {
                 bundle?.session?.close()
                 bundle = newBundle
                 engine = KokoroEngine(newBundle, manifest)
+                status = RuntimeStatus(newBundle.ep, newBundle.graphId, manifest.sampleRate)
+                DebugLogger.log(
+                    "Kokoro runtime ready ep=${newBundle.ep} graph=${newBundle.graphId} sampleRate=${manifest.sampleRate}"
+                )
             }.onFailure { error ->
                 Log.e(TAG, "Unable to load Kokoro session", error)
+                DebugLogger.log("Kokoro runtime failed: ${error.message}")
             }
 
             loadResult
@@ -62,10 +69,13 @@ object OnnxRuntimeManager {
 
     fun currentManifest(): Manifest = manifest
 
+    fun runtimeStatus(): RuntimeStatus? = status
+
     fun close() {
         bundle?.session?.close()
         bundle = null
         engine = null
+        status = null
     }
 
     private suspend fun ensureBundledFallback(context: Context, manifest: Manifest) {
@@ -91,5 +101,13 @@ object OnnxRuntimeManager {
                 Log.w(TAG, "Bundled INT8 fallback unavailable", error)
             }
         }
+    }
+
+    data class RuntimeStatus(
+        val ep: RunEp,
+        val graphId: String,
+        val sampleRate: Int
+    ) {
+        override fun toString(): String = "${ep.name}/${graphId}"
     }
 }

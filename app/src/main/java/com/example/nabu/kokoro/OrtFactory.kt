@@ -15,10 +15,9 @@ object OrtFactory {
     fun sessionOptions(ep: RunEp, cachePath: String?): SessionOptions {
         val options = SessionOptions()
         try {
-            val level = if (ep == RunEp.NNAPI) {
-                SessionOptions.OptLevel.BASIC_OPT
-            } else {
-                SessionOptions.OptLevel.ALL_OPT
+            val level = when (ep) {
+                RunEp.NNAPI -> SessionOptions.OptLevel.NO_OPT
+                else -> SessionOptions.OptLevel.ALL_OPT
             }
             options.setOptimizationLevel(level)
         } catch (err: OrtException) {

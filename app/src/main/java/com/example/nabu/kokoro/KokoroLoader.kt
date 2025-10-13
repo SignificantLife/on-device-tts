@@ -25,14 +25,23 @@ object KokoroLoader {
         val fp16 = fp16Entry?.let { File(root, it.dest) }
         val int8 = int8Entry?.let { File(root, it.dest) }
 
-        val attempts = sequence {
-            if (choice == RunEp.AUTO || choice == RunEp.NNAPI) {
-                yield(Attempt(RunEp.NNAPI, fp16Entry, fp16))
+        val attempts = buildList {
+            when (choice) {
+                RunEp.AUTO -> {
+                    add(Attempt(RunEp.NNAPI, fp16Entry, fp16, cacheable = false))
+                    add(Attempt(RunEp.CPU, int8Entry, int8, cacheable = true))
+                    add(Attempt(RunEp.CPU, fp16Entry, fp16, cacheable = true))
+                }
+                RunEp.NNAPI -> {
+                    add(Attempt(RunEp.NNAPI, fp16Entry, fp16, cacheable = false))
+                    add(Attempt(RunEp.CPU, int8Entry, int8, cacheable = true))
+                    add(Attempt(RunEp.CPU, fp16Entry, fp16, cacheable = true))
+                }
+                RunEp.CPU -> {
+                    add(Attempt(RunEp.CPU, int8Entry, int8, cacheable = true))
+                    add(Attempt(RunEp.CPU, fp16Entry, fp16, cacheable = true))
+                }
             }
-            if (choice == RunEp.AUTO || choice == RunEp.CPU) {
-                yield(Attempt(RunEp.CPU, fp16Entry, fp16))
-            }
-            yield(Attempt(RunEp.CPU, int8Entry, int8))
         }
 
         val env: OrtEnvironment = OrtFactory.env
@@ -44,10 +53,13 @@ object KokoroLoader {
                 continue
             }
             val cachePath = attempt.cacheFile(ctx, manifest)
-            val options = OrtFactory.sessionOptions(attempt.ep, cachePath.absolutePath)
+            val options = OrtFactory.sessionOptions(attempt.ep, cachePath?.absolutePath)
             try {
                 val session = env.createSession(modelFile.absolutePath, options)
                 options.close()
+                DebugLogger.log(
+                    "KokoroLoader session ready graph=${attempt.graphId} ep=${attempt.ep} model=${modelFile.absolutePath}"
+                )
                 return KokoroBundle(
                     session = session,
                     ep = attempt.ep,
@@ -66,11 +78,13 @@ object KokoroLoader {
     private data class Attempt(
         val ep: RunEp,
         val manifestFile: ManifestFile?,
-        val file: File?
+        val file: File?,
+        val cacheable: Boolean
     ) {
         val graphId: String = manifestFile?.id ?: "custom"
 
-        fun cacheFile(ctx: Context, manifest: Manifest): File {
+        fun cacheFile(ctx: Context, manifest: Manifest): File? {
+            if (!cacheable) return null
             val parts = buildList {
                 add(manifest.name)
                 add(manifest.version)

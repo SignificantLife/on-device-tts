@@ -35,7 +35,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
@@ -71,11 +70,14 @@ fun MixerScreen(
     val scope = rememberCoroutineScope()
     val context = LocalContext.current
     val scrollState = rememberScrollState()
+    var runtimeStatus by remember { mutableStateOf(OnnxRuntimeManager.runtimeStatus()) }
 
     LaunchedEffect(Unit) {
-        withContext(Dispatchers.IO) {
+        val result = withContext(Dispatchers.IO) {
             OnnxRuntimeManager.initialize(context.applicationContext)
         }
+        runtimeStatus = OnnxRuntimeManager.runtimeStatus()
+        result.onFailure { DebugLogger.log("Mixer failed to init runtime: ${it.message}") }
     }
 
     var text by remember { mutableStateOf("Made with love and brought to you from outer space.") }
@@ -105,6 +107,12 @@ fun MixerScreen(
             modifier = Modifier.verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            Text(
+                text = "RUNTIME: ${runtimeStatus?.toString() ?: "Loading…"}",
+                style = MaterialTheme.typography.labelLarge,
+                color = Brutal.textDim
+            )
+
             TextField(
             value = text,
             onValueChange = { text = it },
