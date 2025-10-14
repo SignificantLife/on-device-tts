@@ -234,7 +234,6 @@ fun BookScreen(
     fun startPlaybackFromLine(index: Int) {
         bookViewModel.setCurrentUnitIndex(index)
         bookViewModel.startPlayback(
-            session = session,
             phonemeConverter = phonemeConverter,
             styleLoader = styleLoader,
             selectedStyles = selectedStyles,
@@ -246,7 +245,6 @@ fun BookScreen(
             bookUri = bookUri,
             projectName = projectName,
             context = context,
-            engine = SettingsManager.getTtsEngine(context),
             usePregenerated = usePregenerated,
             onFinished = {
                 bookUri?.let { u -> BookmarkManager.clear(context, u.toString()) }
