@@ -39,6 +39,20 @@ class DebugSupertonicEngine(
         }
     }
 
+    fun setStyle(styleName: String) {
+        try {
+            val styleFile = File(modelDir, "voice_styles/$styleName.json")
+            if (styleFile.exists()) {
+                defaultStyle = SupertonicEngine.loadStyle(listOf(styleFile))
+                DebugLogger.log("DebugSupertonicEngine: Switched style to $styleName")
+            } else {
+                DebugLogger.log("DebugSupertonicEngine: Style $styleName not found at ${styleFile.absolutePath}")
+            }
+        } catch (e: Exception) {
+            DebugLogger.log("DebugSupertonicEngine: Failed to set style $styleName: ${e.message}")
+        }
+    }
+
     override val sampleRate: Int
         get() = delegate.sampleRate
 

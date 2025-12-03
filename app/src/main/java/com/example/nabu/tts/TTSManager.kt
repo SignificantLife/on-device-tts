@@ -12,6 +12,7 @@ import kotlinx.coroutines.flow.first
 import java.io.File
 import com.example.nabu.data.ModelManager
 import ai.onnxruntime.OrtEnvironment
+import com.example.nabu.utils.SettingsManager
 
 object TTSManager {
     private var activeEngine: TTSEngine? = null
@@ -20,47 +21,50 @@ object TTSManager {
     // Let's use string id or a separate enum.
 
     suspend fun getEngine(context: Context, modelManager: ModelManager): TTSEngine? {
-        // Simple logic: check user preference for TTS engine.
-        // For now, let's look for a downloaded Supertonic model and use it if preferred.
-        // Or we can just expose a method to set the engine.
+        val preferredEngine = SettingsManager.getTtsEngine(context)
 
-        if (activeEngine != null) return activeEngine
-
-        // Try to load Supertonic if available and selected
-        // We need a preference for "Active TTS Model".
-        // For now, let's iterate available TTS models.
-        val ttsModels = modelManager.models.filter { it.type == ModelType.TTS && it.isDownloaded }
-
-        if (ttsModels.isNotEmpty()) {
-            val model = ttsModels.first() // Just pick first for now
-            val modelDir = File(context.filesDir, "models/${model.id}")
-             try {
-                // Initialize engine
-                val engine = DebugSupertonicEngine(modelDir)
-
-                // Pre-load a default style
-                val voicesDir = File(modelDir, "voice_styles")
-                val styleFile = File(voicesDir, "F1.json")
-                if (styleFile.exists()) {
-                     // We need to store this style somewhere or pass it to synthesize.
-                     // Since we adapted TTSEngine.synthesize(text, speed), we need to handle style internally or via wrapper.
-                     // The DebugSupertonicEngine wrapper should handle loading/caching the default style.
-                     // But DebugSupertonicEngine currently delegates to SupertonicEngine which needs style in synthesize.
-                     // Let's modify DebugSupertonicEngine to hold a default style.
-
-                     // For now, I'll assume we can pass the default style in the wrapper.
-                     // I will update DebugSupertonicEngine to load a default style.
-                }
-
-                activeEngine = engine
-                DebugLogger.log("TTSManager: Switched to Supertonic (${model.name})")
+        if (activeEngine != null) {
+            // Check if active engine matches preference.
+            // This is a bit tricky since we don't store the type on the engine instance easily.
+            // For now, if preference changed, we might need to close and reload.
+            // But getEngine is usually called per synthesis or session.
+            // Let's assume for now if it's initialized we re-use it, unless we force reload.
+            // Actually, if the user switches engine, we should probably close the old one.
+            // But getEngine doesn't know if preference JUST changed.
+            // Let's rely on the caller or just check type if possible.
+            val isSupertonic = activeEngine is DebugSupertonicEngine || activeEngine is com.example.nabu.supertonic.SupertonicEngine
+            if (preferredEngine == "supertonic" && !isSupertonic) {
+                activeEngine?.close()
+                activeEngine = null
+            } else if (preferredEngine == "kokoro" && isSupertonic) {
+                activeEngine?.close()
+                activeEngine = null
+            } else {
                 return activeEngine
-            } catch (e: Exception) {
-                DebugLogger.log("TTSManager: Failed to load Supertonic: ${e.message}")
             }
         }
 
-        // Fallback to Kokoro
+        if (preferredEngine == "supertonic") {
+             val ttsModels = modelManager.models.filter { it.type == ModelType.TTS && it.isDownloaded }
+             if (ttsModels.isNotEmpty()) {
+                 val model = ttsModels.first()
+                 val modelDir = File(context.filesDir, "models/${model.id}")
+                 try {
+                     val engine = DebugSupertonicEngine(modelDir)
+                     activeEngine = engine
+                     DebugLogger.log("TTSManager: Switched to Supertonic (${model.name})")
+                     return activeEngine
+                 } catch (e: Exception) {
+                     DebugLogger.log("TTSManager: Failed to load Supertonic: ${e.message}")
+                     // Fallback to Kokoro? Or just return null?
+                     // Let's fall back to Kokoro to be safe.
+                 }
+             } else {
+                 DebugLogger.log("TTSManager: Supertonic selected but no model found.")
+             }
+        }
+
+        // Fallback or default to Kokoro
         try {
             val bundle = OnnxRuntimeManager.initialize(context).getOrNull()
             if (bundle != null) {

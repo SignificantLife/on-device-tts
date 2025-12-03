@@ -105,6 +105,40 @@ fun SettingsScreen() {
                 }
             }
 
+            // TTS Engine Selection
+            var ttsEngineExpanded by remember { mutableStateOf(false) }
+            var ttsEngine by remember { mutableStateOf(SettingsManager.getTtsEngine(context)) }
+            val ttsEngineOptions = listOf("kokoro", "supertonic")
+
+            ExposedDropdownMenuBox(
+                expanded = ttsEngineExpanded,
+                onExpandedChange = { ttsEngineExpanded = it }
+            ) {
+                TextField(
+                    value = ttsEngine.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() },
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("TTS Engine") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = ttsEngineExpanded) },
+                    modifier = Modifier.menuAnchor().fillMaxWidth()
+                )
+                DropdownMenu(
+                    expanded = ttsEngineExpanded,
+                    onDismissRequest = { ttsEngineExpanded = false }
+                ) {
+                    ttsEngineOptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }) },
+                            onClick = {
+                                ttsEngine = option
+                                SettingsManager.setTtsEngine(context, option)
+                                ttsEngineExpanded = false
+                            }
+                        )
+                    }
+                }
+            }
+
             val scope = rememberCoroutineScope()
             VersionPlate(version = versionName, onClick = {
                 scope.launch {

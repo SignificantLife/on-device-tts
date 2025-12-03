@@ -15,6 +15,7 @@ import com.example.nabu.data.ConversationTurn
 import com.example.nabu.data.Model
 import com.example.nabu.data.ModelManager
 import com.example.nabu.kokoro.KokoroEngine
+import com.example.nabu.supertonic.DebugSupertonicEngine
 import com.example.nabu.tts.TTSManager
 import com.example.nabu.utils.AudioPlayer
 import com.example.nabu.utils.BenchmarkManager
@@ -143,6 +144,19 @@ class ChatViewModel(
         startingModel?.let { setActiveModel(it, persistConversation = false) }
 
         refreshConversations()
+        refreshStyles()
+    }
+
+    fun refreshStyles() {
+        val available = styleLoader.names
+        if (available.isNotEmpty()) {
+            val current = _selectedStyles.value
+            if (current.isEmpty() || current.any { it !in available }) {
+                val default = available.first()
+                _selectedStyles.value = listOf(default)
+                _weights.value = mapOf(default to 1f)
+            }
+        }
     }
 
     fun toggleTtsEnabled() {
@@ -539,6 +553,10 @@ class ChatViewModel(
                     } else {
                         // For Supertonic or other engines, use the interface directly
                         // Note: Supertonic does its own text normalization/phonemization internally or via TextProcessor
+                        if (engine is DebugSupertonicEngine) {
+                            val styleName = _selectedStyles.value.firstOrNull() ?: "F1"
+                            engine.setStyle(styleName)
+                        }
                         val result = engine.synthesize(text, _speed.value)
                         result.wav to result.sampleRate
                     }

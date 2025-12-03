@@ -69,6 +69,10 @@ fun ChatScreen(
     val availableModels by viewModel.availableModels.collectAsState()
     val activeModel by viewModel.activeModel.collectAsState()
 
+    LaunchedEffect(Unit) {
+        viewModel.refreshStyles()
+    }
+
     LaunchedEffect(playerState) {
         PcmTap.enabled = playerState == PlayerState.PLAYING
     }
