@@ -7,6 +7,8 @@ interface TTSEngine : AutoCloseable {
     ): AudioResult
 
     val sampleRate: Int
+    val name: String
+    val provider: String
 }
 
 data class AudioResult(

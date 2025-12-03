@@ -24,6 +24,10 @@ class KokoroEngine(
     override val sampleRate: Int
         get() = bundle.sampleRate
 
+    override val name: String = "Kokoro"
+    override val provider: String
+        get() = bundle.ep.name
+
     override suspend fun synthesize(text: String, speed: Float): AudioResult {
          // This needs to tokenize and synth. Kokoro logic is complex and separated.
          // 'synth' takes tokens. We need to look at how KokoroEngine is used to bridge this.

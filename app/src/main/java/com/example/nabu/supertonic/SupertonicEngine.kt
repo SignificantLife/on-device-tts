@@ -25,6 +25,8 @@ class SupertonicEngine(
     private val config: SupertonicConfig = loadConfig(modelDir)
     override val sampleRate: Int
         get() = config.sampleRate
+    override val name: String = "Supertonic"
+    override val provider: String = "CPU"
     private val textProcessor = UnicodeProcessor(File(modelDir, "unicode_indexer.json"))
     private val dpSession: OrtSession
     private val textEncSession: OrtSession

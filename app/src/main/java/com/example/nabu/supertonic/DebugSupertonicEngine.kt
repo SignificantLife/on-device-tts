@@ -56,6 +56,9 @@ class DebugSupertonicEngine(
     override val sampleRate: Int
         get() = delegate.sampleRate
 
+    override val name: String = "Supertonic"
+    override val provider: String = "CPU" // Supertonic currently runs on CPU via ONNX Runtime default or configured env
+
     override suspend fun synthesize(text: String, speed: Float): AudioResult {
          DebugLogger.log("DebugSupertonicEngine: synthesize called via TTSEngine interface")
          val style = defaultStyle ?: throw IllegalStateException("No style loaded. Cannot synthesize.")

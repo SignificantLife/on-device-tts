@@ -253,22 +253,24 @@ private fun generateAudio(
                 Toast.makeText(context, "Phonemes: $phonemes", Toast.LENGTH_LONG).show()
             }
 
-            val (audioData, sampleRate) = if (engine is com.example.nabu.kokoro.KokoroEngine) {
+            val rawEngine = if (engine is com.example.nabu.tts.BenchmarkingTTSEngine) engine.delegate else engine
+
+            val (audioData, sampleRate) = if (rawEngine is com.example.nabu.kokoro.KokoroEngine) {
                 PerfHud.record("TTS synth") {
                      createAudio(
                         phonemes = phonemes,
                         voice = style,
                         speed = speed,
-                        engine = engine,
+                        engine = rawEngine,
                         styleLoader = styleLoader
                     )
                 }
             } else {
                 // Supertonic and others are suspend functions, so we can't use PerfHud.record (which expects non-suspend)
                 // We can manually measure if needed, but for now just call directly.
-                if (engine is com.example.nabu.supertonic.DebugSupertonicEngine) {
-                    engine.setStyle(style)
-                    val result = engine.synthesize(text, speed)
+                if (rawEngine is com.example.nabu.supertonic.DebugSupertonicEngine) {
+                    rawEngine.setStyle(style)
+                    val result = rawEngine.synthesize(text, speed)
                     result.wav to result.sampleRate
                 } else {
                     val result = engine.synthesize(text, speed)

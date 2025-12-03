@@ -32,7 +32,7 @@ object TTSManager {
             // Actually, if the user switches engine, we should probably close the old one.
             // But getEngine doesn't know if preference JUST changed.
             // Let's rely on the caller or just check type if possible.
-            val isSupertonic = activeEngine is DebugSupertonicEngine || activeEngine is com.example.nabu.supertonic.SupertonicEngine
+            val isSupertonic = activeEngine?.name == "Supertonic"
             if (preferredEngine == "supertonic" && !isSupertonic) {
                 activeEngine?.close()
                 activeEngine = null
@@ -51,7 +51,7 @@ object TTSManager {
                  val modelDir = File(context.filesDir, "models/${model.id}")
                  try {
                      val engine = DebugSupertonicEngine(modelDir)
-                     activeEngine = engine
+                     activeEngine = BenchmarkingTTSEngine(engine)
                      DebugLogger.log("TTSManager: Switched to Supertonic (${model.name})")
                      return activeEngine
                  } catch (e: Exception) {
@@ -68,7 +68,7 @@ object TTSManager {
         try {
             val bundle = OnnxRuntimeManager.initialize(context).getOrNull()
             if (bundle != null) {
-                 activeEngine = OnnxRuntimeManager.getEngine()
+                 activeEngine = BenchmarkingTTSEngine(OnnxRuntimeManager.getEngine())
                  DebugLogger.log("TTSManager: Switched to Kokoro")
                  return activeEngine
             }

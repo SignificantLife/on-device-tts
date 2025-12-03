@@ -271,19 +271,21 @@ private fun generateAudio(
                  return@launch
             }
 
-            val (audio, sampleRate) = if (engine is com.example.nabu.kokoro.KokoroEngine) {
+            val rawEngine = if (engine is com.example.nabu.tts.BenchmarkingTTSEngine) engine.delegate else engine
+
+            val (audio, sampleRate) = if (rawEngine is com.example.nabu.kokoro.KokoroEngine) {
                 val phonemes = phonemeConverter.phonemize(text)
                 createAudioFromStyleVector(
                     phonemes = phonemes,
                     voice = style,
                     speed = speed,
-                    engine = engine
+                    engine = rawEngine
                 )
-            } else if (engine is com.example.nabu.supertonic.DebugSupertonicEngine) {
+            } else if (rawEngine is com.example.nabu.supertonic.DebugSupertonicEngine) {
                 if (selectedStyleName != null) {
-                    engine.setStyle(selectedStyleName)
+                    rawEngine.setStyle(selectedStyleName)
                 }
-                val result = engine.synthesize(text, speed)
+                val result = rawEngine.synthesize(text, speed)
                 result.wav to result.sampleRate
             } else {
                  val result = engine.synthesize(text, speed)

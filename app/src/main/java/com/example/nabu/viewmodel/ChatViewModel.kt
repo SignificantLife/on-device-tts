@@ -441,17 +441,41 @@ class ChatViewModel(
         return "Conversation ${formatter.format(Date())}"
     }
 
+    // System Prompt & Token Usage
+    private val _systemPrompt = MutableStateFlow("You are a helpful AI assistant.")
+    val systemPrompt = _systemPrompt.asStateFlow()
+
+    private val _tokenUsage = MutableStateFlow(0 to DEFAULT_MAX_CONTEXT_TOKENS)
+    val tokenUsage = _tokenUsage.asStateFlow()
+
+    fun updateSystemPrompt(newPrompt: String) {
+        _systemPrompt.value = newPrompt
+    }
+
     private fun prepareConversationForModel(maxTokens: Int): List<LlmMessage> {
-        val trimmedConversation = trimConversationToTokenLimit(conversationHistory, maxTokens)
-        val totalTokens = trimmedConversation.sumOf { estimateTokenCount(it.content) }
-        DebugLogger.log("Prepared ${trimmedConversation.size} conversation turns (~${totalTokens} tokens) for inference")
-        return trimmedConversation.map { turn ->
+        val systemMsg = LlmMessage(role = "system", content = _systemPrompt.value)
+        val systemTokens = estimateTokenCount(systemMsg.content)
+        val availableTokens = maxTokens - systemTokens
+
+        val trimmedConversation = trimConversationToTokenLimit(conversationHistory, availableTokens)
+        val totalTokens = trimmedConversation.sumOf { estimateTokenCount(it.content) } + systemTokens
+        
+        _tokenUsage.value = totalTokens to maxTokens
+        DebugLogger.log("Prepared ${trimmedConversation.size} conversation turns + system prompt (~${totalTokens} tokens) for inference")
+        
+        val messages = mutableListOf<LlmMessage>()
+        if (systemMsg.content.isNotBlank()) {
+            messages.add(systemMsg)
+        }
+        
+        messages.addAll(trimmedConversation.map { turn ->
             val role = when (turn.role) {
                 ConversationRole.USER -> "user"
-                ConversationRole.AGENT -> "agent"
+                ConversationRole.AGENT -> "model" // Changed from "agent" to "model"
             }
             LlmMessage(role = role, content = turn.content)
-        }
+        })
+        return messages
     }
 
     private fun trimConversationToTokenLimit(
