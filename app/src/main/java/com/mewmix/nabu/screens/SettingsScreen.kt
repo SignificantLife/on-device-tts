@@ -53,12 +53,17 @@ fun SettingsScreen() {
     var debug by remember { mutableStateOf(SettingsManager.isDebug(context)) }
     var benchmark by remember { mutableStateOf(SettingsManager.isBenchmark(context)) }
     var runtime by remember { mutableStateOf(SettingsManager.getRuntimePreference(context)) }
+    var ttsEngine by remember { mutableStateOf(SettingsManager.getTtsEngine(context)) }
     var expanded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val modelManager = remember { ModelManager(context) }
     val ttsModels = modelManager.models.filter { it.type == ModelType.TTS }
+    val ttsEngineOptions = listOf("kokoro", "supertonic")
     var supertonicExpanded by remember { mutableStateOf(false) }
     var supertonicModelId by remember { mutableStateOf(SettingsManager.getSupertonicModelId(context)) }
+    val runtimeOptions = if (ttsEngine == "supertonic") listOf(RunEp.CPU) else RunEp.values().toList()
+    val allowRuntimeSelection = runtimeOptions.size > 1
+    val displayRuntime = if (ttsEngine == "supertonic") RunEp.CPU else runtime
 
     LaunchedEffect(runtime) {
         withContext(Dispatchers.IO) {
@@ -99,21 +104,22 @@ fun SettingsScreen() {
 
             ExposedDropdownMenuBox(
                 expanded = expanded,
-                onExpandedChange = { expanded = it }
+                onExpandedChange = { if (allowRuntimeSelection) expanded = it }
             ) {
                 TextField(
-                    value = "${SettingsManager.getTtsEngine(context).replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }} / ${runtime.name}",
+                    value = "${ttsEngine.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }} / ${displayRuntime.name}",
                     onValueChange = {},
                     readOnly = true,
                     label = { Text("Active Engine / Provider") },
                     trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
+                    enabled = allowRuntimeSelection,
                     modifier = Modifier.menuAnchor().fillMaxWidth()
                 )
                 DropdownMenu(
                     expanded = expanded,
                     onDismissRequest = { expanded = false }
                 ) {
-                    RunEp.values().forEach { option ->
+                    runtimeOptions.forEach { option ->
                         DropdownMenuItem(
                             text = { Text(option.name) },
                             onClick = {
@@ -128,8 +134,6 @@ fun SettingsScreen() {
 
             // TTS Engine Selection
             var ttsEngineExpanded by remember { mutableStateOf(false) }
-            var ttsEngine by remember { mutableStateOf(SettingsManager.getTtsEngine(context)) }
-            val ttsEngineOptions = listOf("kokoro", "supertonic")
 
             ExposedDropdownMenuBox(
                 expanded = ttsEngineExpanded,

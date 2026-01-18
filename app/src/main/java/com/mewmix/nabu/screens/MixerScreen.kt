@@ -60,6 +60,7 @@ import com.mewmix.nabu.utils.OnnxRuntimeManager
 import com.mewmix.nabu.utils.buildStyleFileName
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.ModelType
+import com.mewmix.nabu.ui.components.RuntimeStatusLine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -74,7 +75,6 @@ fun MixerScreen(
     val context = LocalContext.current
     val modelManager = remember { ModelManager(context) }
     val scrollState = rememberScrollState()
-    var runtimeStatus by remember { mutableStateOf(OnnxRuntimeManager.runtimeStatus()) }
     var isSupertonic by remember { mutableStateOf(false) }
     var hasSupertonicModels by remember { mutableStateOf(false) }
 
@@ -88,7 +88,6 @@ fun MixerScreen(
             }
             val selectedModel = selectedId?.let { id -> downloadedModels.firstOrNull { it.id == id } }
             hasSupertonicModels = if (selectedId != null) selectedModel != null else downloadedModels.isNotEmpty()
-            runtimeStatus = null
         } else {
             val result = withContext(Dispatchers.IO) {
                 OnnxRuntimeManager.initialize(
@@ -96,7 +95,6 @@ fun MixerScreen(
                     allowDownload = SettingsManager.isKokoroAutoDownloadEnabled(context)
                 )
             }
-            runtimeStatus = OnnxRuntimeManager.runtimeStatus()
             result.onFailure { DebugLogger.log("Mixer failed to init runtime: ${it.message}") }
         }
     }
@@ -128,11 +126,7 @@ fun MixerScreen(
             modifier = Modifier.verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text(
-                text = if (isSupertonic) "RUNTIME: SUPERTONIC" else "RUNTIME: ${runtimeStatus?.toString() ?: "Loading…"}",
-                style = MaterialTheme.typography.labelLarge,
-                color = Brutal.textDim
-            )
+            RuntimeStatusLine()
             if (isSupertonic && !hasSupertonicModels) {
                 Text(
                     text = if (SettingsManager.getSupertonicModelId(context) != null) {

@@ -39,6 +39,7 @@ import com.mewmix.nabu.utils.*
 import com.mewmix.nabu.ui.components.ProgressDialog
 import com.mewmix.nabu.ui.components.RadialWaveformVisualizer
 import com.mewmix.nabu.ui.components.WaveformVisualizer
+import com.mewmix.nabu.ui.components.RuntimeStatusLine
 import com.mewmix.nabu.viewmodel.BookViewModel
 import com.mewmix.nabu.tts.TTSManager
 import com.mewmix.nabu.data.ModelManager
@@ -310,6 +311,13 @@ fun BookScreen(
             verticalArrangement = Arrangement.spacedBy(dimensionResource(id = R.dimen.padding_medium)),
             state = listState
         ) {
+        item {
+            RuntimeStatusLine(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 4.dp)
+            )
+        }
         item {
             BrutalSection(
                 title = "Settings",

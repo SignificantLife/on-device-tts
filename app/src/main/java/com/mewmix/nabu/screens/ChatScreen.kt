@@ -53,6 +53,7 @@ import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.mewmix.nabu.ui.brutalist.BrutalSection
 import com.mewmix.nabu.ui.brutalist.BrutalSlider
 import com.mewmix.nabu.ui.brutalist.PanelBox
+import com.mewmix.nabu.ui.components.RuntimeStatusLine
 
 @Composable
 fun ChatScreen(
@@ -118,6 +119,11 @@ fun ChatScreen(
                 .fillMaxSize()
                 .padding(paddingValues)
         ) {
+            RuntimeStatusLine(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 8.dp, vertical = 4.dp)
+            )
 
             BrutalSection(
                 title = "Conversation Settings",

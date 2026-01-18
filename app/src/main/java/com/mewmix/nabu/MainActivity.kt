@@ -98,6 +98,7 @@ import com.mewmix.nabu.screens.InitScreen
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.mewmix.nabu.viewmodel.GlobalRuntimeViewModel
 import com.mewmix.nabu.ui.components.GlobalStatusBar
+import com.mewmix.nabu.ui.components.RuntimeStatusLine
 import com.mewmix.nabu.data.ModelState
 import androidx.compose.runtime.collectAsState
 
@@ -530,7 +531,7 @@ fun BasicScreen(
             .fillMaxSize()
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            // Loading UI removed here, handled by GlobalStatusBar
+            RuntimeStatusLine()
 
             if (isSupertonic && !hasSupertonicModels) {
                 Text(
