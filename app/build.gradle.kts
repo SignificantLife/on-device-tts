@@ -102,6 +102,7 @@ dependencies {
     implementation(libs.androidx.media)
     implementation("androidx.compose.material:material-icons-extended:1.6.8")
     testImplementation(libs.junit)
+    testImplementation(libs.androidx.junit)
     testImplementation(libs.mockito.core)
     testImplementation(libs.mockito.inline)
     testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.8.1")

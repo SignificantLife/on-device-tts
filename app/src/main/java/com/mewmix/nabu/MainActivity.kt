@@ -95,37 +95,20 @@ import java.util.Locale
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.ModelType
 import com.mewmix.nabu.screens.InitScreen
+import androidx.lifecycle.viewmodel.compose.viewModel
+import com.mewmix.nabu.viewmodel.GlobalRuntimeViewModel
+import com.mewmix.nabu.ui.components.GlobalStatusBar
+import com.mewmix.nabu.data.ModelState
+import androidx.compose.runtime.collectAsState
 
 const val EXTRA_START_SCREEN = "start_screen"
 const val EXTRA_BOOK_URI = "book_uri"
 class MyApplication : Application() {
-    private val preloadScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-
+    // Initialization moved to GlobalRuntimeViewModel
     override fun onCreate() {
         super.onCreate()
         DynamicColors.applyToActivitiesIfAvailable(this)
-        preloadScope.launch {
-            if (SettingsManager.isInitComplete(this@MyApplication) &&
-                SettingsManager.getTtsEngine(this@MyApplication) == "kokoro"
-            ) {
-                OnnxRuntimeManager.initialize(
-                    applicationContext,
-                    allowDownload = SettingsManager.isKokoroAutoDownloadEnabled(this@MyApplication)
-                )
-            }
-        }
     }
-
-    override fun onTerminate() {
-        super.onTerminate()
-        preloadScope.cancel()
-    }
-}
-
-private sealed interface ModelState {
-    data object Loading : ModelState
-    data object Ready : ModelState
-    data class Error(val message: String) : ModelState
 }
 
 class MainActivity : ComponentActivity() {
@@ -158,10 +141,13 @@ class MainActivity : ComponentActivity() {
                         onComplete = { needsInit = false }
                     )
                 } else {
+                    val viewModel: GlobalRuntimeViewModel = viewModel()
                     MainScreen(
+                        viewModel = viewModel,
                         phonemeConverter = phonemeConverter,
                         onGenerateAudio = { text, style, speed, shouldSave, onComplete ->
                             generateAudio(
+                                viewModel,
                                 phonemeConverter,
                                 text,
                                 style,
@@ -177,10 +163,6 @@ class MainActivity : ComponentActivity() {
                         requestedScreen = requestedScreen.value,
                         onRequestedScreenHandled = { requestedScreen.value = null }
                     )
-
-                    if (SettingsManager.isBenchmark(this@MainActivity)) {
-                        PerfHud.Overlay()
-                    }
                 }
             }
         }
@@ -211,6 +193,7 @@ class MainActivity : ComponentActivity() {
 }
 
 private fun generateAudio(
+    viewModel: GlobalRuntimeViewModel,
     phonemeConverter: PhonemeConverter,
     text: String,
     style: String,
@@ -270,6 +253,10 @@ private fun generateAudio(
                 val audioMs = audioData.size * 1000L / sampleRate
                 BenchmarkManager.recordTts(OnnxRuntimeManager.currentBundle(), genMs, audioMs)
                 BenchmarkManager.profileSystem(context)
+                
+                val rtf = if (audioMs > 0) genMs.toFloat() / audioMs.toFloat() else 0f
+                viewModel.updateBenchmarkStat("RTF", rtf)
+                viewModel.updateBenchmarkStat("Latency", genMs.toFloat())
             }
 
             playAudio(
@@ -347,6 +334,7 @@ private fun Screen.asFeature(): Screen? = when (this) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
+    viewModel: GlobalRuntimeViewModel,
     phonemeConverter: PhonemeConverter,
     onGenerateAudio: (String, String, Float, Boolean, () -> Unit) -> Unit,
     userPreferencesRepository: UserPreferencesRepository,
@@ -396,6 +384,12 @@ fun MainScreen(
         }
     }
     val context = LocalContext.current
+    
+    // Collect Global State
+    val modelState by viewModel.modelState.collectAsState()
+    val downloadProgress by viewModel.downloadProgress.collectAsState()
+    val benchmarkStats by viewModel.benchmarkStats.collectAsState()
+
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
@@ -411,59 +405,70 @@ fun MainScreen(
             )
         }
     ) { innerPadding ->
-        Box(
-            modifier = Modifier
-                .padding(innerPadding)
-                .pointerInput(currentScreen, screenStack.size) {
-                    var totalDrag = 0f
-                    detectDragGestures(
-                        onDragStart = { totalDrag = 0f },
-                        onDragCancel = { totalDrag = 0f },
-                        onDragEnd = {
-                            val feature = currentFeature ?: return@detectDragGestures
-                            val index = featureScreens.indexOf(feature)
-                            if (abs(totalDrag) > 96f && index != -1) {
-                                when {
-                                    totalDrag > 0f && index > 0 -> navigateTo(featureScreens[index - 1])
-                                    totalDrag < 0f && index < featureScreens.lastIndex -> navigateTo(featureScreens[index + 1])
+        Column(modifier = Modifier.padding(innerPadding)) {
+            // Global Status Bar (Shows Loading / Errors / Benchmarks)
+            GlobalStatusBar(
+                modelState = modelState,
+                downloadProgress = downloadProgress,
+                benchmarkStats = benchmarkStats
+            )
+            
+            Box(
+                modifier = Modifier
+                    .weight(1f)
+                    .pointerInput(currentScreen, screenStack.size) {
+                        var totalDrag = 0f
+                        detectDragGestures(
+                            onDragStart = { totalDrag = 0f },
+                            onDragCancel = { totalDrag = 0f },
+                            onDragEnd = {
+                                val feature = currentFeature ?: return@detectDragGestures
+                                val index = featureScreens.indexOf(feature)
+                                if (abs(totalDrag) > 96f && index != -1) {
+                                    when {
+                                        totalDrag > 0f && index > 0 -> navigateTo(featureScreens[index - 1])
+                                        totalDrag < 0f && index < featureScreens.lastIndex -> navigateTo(featureScreens[index + 1])
+                                    }
                                 }
+                                totalDrag = 0f
                             }
-                            totalDrag = 0f
+                        ) { _, dragAmount ->
+                            totalDrag += dragAmount.x
                         }
-                    ) { _, dragAmount ->
-                        totalDrag += dragAmount.x
                     }
-                }
-        ) {
-            when (currentScreen) {
-                Screen.Basic -> BasicScreen(onGenerateAudio = onGenerateAudio)
-                Screen.Mixer -> MixerScreen(
-                    phonemeConverter = phonemeConverter,
-                    styleLoader = StyleLoader(context)
-                )
-                Screen.Book -> BookScreen(
-                    phonemeConverter = phonemeConverter
-                )
-                Screen.Chat -> {
-                    // No-op, handled by onClick which starts ChatActivity
-                    // This case is primarily for the 'selected' state of the NavigationBarItem
-                }
-                Screen.More -> MoreScreen { screen ->
-                    val destination = when (screen) {
-                        "Creations" -> Screen.Creations
-                        "Settings" -> Screen.Settings
-                        "Models" -> Screen.Models
-                        "Credits" -> Screen.Credits
-                        "DebugLog" -> Screen.DebugLog
-                        else -> null
+            ) {
+                when (currentScreen) {
+                    Screen.Basic -> BasicScreen(
+                        onGenerateAudio = onGenerateAudio,
+                        modelState = modelState
+                    )
+                    Screen.Mixer -> MixerScreen(
+                        phonemeConverter = phonemeConverter,
+                        styleLoader = StyleLoader(context)
+                    )
+                    Screen.Book -> BookScreen(
+                        phonemeConverter = phonemeConverter
+                    )
+                    Screen.Chat -> {
+                        // No-op, handled by onClick which starts ChatActivity
                     }
-                    destination?.let { navigateTo(it) }
+                    Screen.More -> MoreScreen { screen ->
+                        val destination = when (screen) {
+                            "Creations" -> Screen.Creations
+                            "Settings" -> Screen.Settings
+                            "Models" -> Screen.Models
+                            "Credits" -> Screen.Credits
+                            "DebugLog" -> Screen.DebugLog
+                            else -> null
+                        }
+                        destination?.let { navigateTo(it) }
+                    }
+                    Screen.Creations -> CreationsScreen()
+                    Screen.Settings -> SettingsScreen()
+                    Screen.Models -> ModelsScreen(userPreferencesRepository)
+                    Screen.Credits -> CreditsConstellationScreen()
+                    Screen.DebugLog -> DebugLogScreen()
                 }
-                Screen.Creations -> CreationsScreen()
-                Screen.Settings -> SettingsScreen()
-                Screen.Models -> ModelsScreen(userPreferencesRepository)
-                Screen.Credits -> CreditsConstellationScreen()
-                Screen.DebugLog -> DebugLogScreen()
             }
         }
     }
@@ -473,6 +478,7 @@ fun MainScreen(
 @Composable
 fun BasicScreen(
     onGenerateAudio: (String, String, Float, Boolean, () -> Unit) -> Unit,
+    modelState: ModelState
 ) {
     val context = LocalContext.current
     val styleLoader = remember { StyleLoader(context) }
@@ -489,24 +495,11 @@ fun BasicScreen(
     var isProcessing by remember { mutableStateOf(false) }
     var shouldSaveFile by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
-    var initTrigger by remember { mutableStateOf(0) }
-    var modelState by remember { mutableStateOf<ModelState>(ModelState.Loading) }
-    var downloadProgress by remember { mutableStateOf<Downloader.DownloadProgress?>(null) }
+    
     var isSupertonic by remember { mutableStateOf(false) }
     var hasSupertonicModels by remember { mutableStateOf(false) }
-    val uiScope = rememberCoroutineScope()
-    var hasLocalModels by remember {
-        mutableStateOf(
-            Downloader.modelsAvailable(
-                context.applicationContext,
-                OnnxRuntimeManager.currentManifest()
-            )
-        )
-    }
 
-    LaunchedEffect(initTrigger) {
-        modelState = ModelState.Loading
-        downloadProgress = null
+    LaunchedEffect(Unit) {
         val preferredEngine = SettingsManager.getTtsEngine(context)
         isSupertonic = preferredEngine == "supertonic"
         if (isSupertonic) {
@@ -517,24 +510,8 @@ fun BasicScreen(
             }
             val selectedModel = selectedId?.let { id -> downloadedModels.firstOrNull { it.id == id } }
             hasSupertonicModels = if (selectedId != null) selectedModel != null else downloadedModels.isNotEmpty()
-            modelState = ModelState.Ready
-        } else {
-            hasLocalModels = Downloader.modelsAvailable(
-                context.applicationContext,
-                OnnxRuntimeManager.currentManifest()
-            )
-            val result = withContext(Dispatchers.IO) {
-                OnnxRuntimeManager.initialize(
-                    context.applicationContext,
-                    allowDownload = SettingsManager.isKokoroAutoDownloadEnabled(context),
-                    onProgress = { progress -> uiScope.launch { downloadProgress = progress } }
-                )
-            }
-            modelState = result.fold(
-                onSuccess = { ModelState.Ready },
-                onFailure = { ModelState.Error(it?.message ?: "Unable to prepare Kokoro models") }
-            )
         }
+        
         if (style.isEmpty() && names.isNotEmpty()) {
             style = names.first()
             SettingsManager.setStyle(context, style)
@@ -553,54 +530,7 @@ fun BasicScreen(
             .fillMaxSize()
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
-            when (val state = modelState) {
-                ModelState.Loading -> {
-                    val runtimePreference = SettingsManager.getRuntimePreference(context)
-                    val runtimeLabel = runtimePreference.displayName()
-                    val loadingMessage = if (hasLocalModels) {
-                        "Loading $runtimeLabel runtime…"
-                    } else {
-                        "Downloading voice models…"
-                    }
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp))
-                            Text(loadingMessage, color = Brutal.textBright)
-                        }
-                        downloadProgress?.let { progress ->
-                            if (progress.totalBytes > 0L) {
-                                val ratio = progress.downloadedBytes.toFloat() / progress.totalBytes.toFloat()
-                                LinearProgressIndicator(
-                                    progress = { ratio.coerceIn(0f, 1f) },
-                                    modifier = Modifier.fillMaxWidth()
-                                )
-                                Text(
-                                    "${formatBytes(progress.downloadedBytes)} / ${formatBytes(progress.totalBytes)}",
-                                    color = Brutal.textDim
-                                )
-                            }
-                        }
-                    }
-                }
-                is ModelState.Error -> {
-                    val downloadEnabled = SettingsManager.isKokoroAutoDownloadEnabled(context)
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text(
-                            text = state.message,
-                            color = MaterialTheme.colorScheme.error
-                        )
-                        BrutalButton(onClick = {
-                            if (!downloadEnabled) {
-                                SettingsManager.setKokoroAutoDownload(context, true)
-                            }
-                            initTrigger++
-                        }) {
-                            BrutalButtonText(if (downloadEnabled) "Retry download" else "Download voice models")
-                        }
-                    }
-                }
-                ModelState.Ready -> Unit
-            }
+            // Loading UI removed here, handled by GlobalStatusBar
 
             if (isSupertonic && !hasSupertonicModels) {
                 Text(
