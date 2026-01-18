@@ -37,12 +37,13 @@ android {
             if (propFile.exists()) {
                 props.load(FileInputStream(propFile))
             }
-            val storeFilePath = props.getProperty("RELEASE_STORE_FILE")
+            
+            val storeFilePath = System.getenv("RELEASE_STORE_FILE") ?: props.getProperty("RELEASE_STORE_FILE")
             if (storeFilePath != null) {
                 storeFile = file(storeFilePath)
-                storePassword = props.getProperty("RELEASE_STORE_PASSWORD")
-                keyAlias = props.getProperty("RELEASE_KEY_ALIAS")
-                keyPassword = props.getProperty("RELEASE_KEY_PASSWORD")
+                storePassword = System.getenv("RELEASE_STORE_PASSWORD") ?: props.getProperty("RELEASE_STORE_PASSWORD")
+                keyAlias = System.getenv("RELEASE_KEY_ALIAS") ?: props.getProperty("RELEASE_KEY_ALIAS")
+                keyPassword = System.getenv("RELEASE_KEY_PASSWORD") ?: props.getProperty("RELEASE_KEY_PASSWORD")
             }
         }
     }
