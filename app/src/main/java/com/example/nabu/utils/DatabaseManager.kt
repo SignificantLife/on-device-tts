@@ -51,8 +51,12 @@ object DatabaseManager {
             val name = cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_NAME))
             val stylesJson = cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_STYLES))
             val weightsJson = cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_WEIGHTS))
-            val stylesType = object : TypeToken<List<String>>() {}.type
-            val weightsType = object : TypeToken<Map<String, Float>>() {}.type
+            val stylesType = TypeToken.getParameterized(List::class.java, String::class.java).type
+            val weightsType = TypeToken.getParameterized(
+                Map::class.java,
+                String::class.java,
+                java.lang.Float::class.java
+            ).type
             val styles = gson.fromJson<List<String>>(stylesJson, stylesType)
             val weights = gson.fromJson<Map<String, Float>>(weightsJson, weightsType)
             val mode = InterpolationMode.valueOf(cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_MODE)))
@@ -78,8 +82,12 @@ object DatabaseManager {
         val gson = Gson()
         val cursor = db.query(DatabaseHelper.TABLE_PROJECTS, null, null, null, null, null, null)
         val projects = mutableListOf<Project>()
-        val stylesType = object : TypeToken<List<String>>() {}.type
-        val weightsType = object : TypeToken<Map<String, Float>>() {}.type
+        val stylesType = TypeToken.getParameterized(List::class.java, String::class.java).type
+        val weightsType = TypeToken.getParameterized(
+            Map::class.java,
+            String::class.java,
+            java.lang.Float::class.java
+        ).type
         while (cursor.moveToNext()) {
             val uri = cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_URI))
             val name = cursor.getString(cursor.getColumnIndexOrThrow(DatabaseHelper.COLUMN_NAME))

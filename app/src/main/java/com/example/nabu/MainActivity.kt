@@ -54,6 +54,7 @@ import com.mewmix.nabu.ui.brutalist.BrutalButtonText
 import com.mewmix.nabu.ui.brutalist.BrutalSlider
 import com.mewmix.nabu.ui.brutalist.PanelRow
 import com.mewmix.nabu.ui.brutalist.Brutal
+import com.example.nabu.ui.components.ModernBottomBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -428,40 +429,16 @@ fun MainScreen(
     Scaffold(
         modifier = Modifier.fillMaxSize(),
         bottomBar = {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .navigationBarsPadding()
-                    .padding(start = 8.dp, top = 8.dp, end = 8.dp, bottom = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                BrutalButton(
-                    onClick = { navigateTo(Screen.Basic) },
-                    modifier = Modifier.weight(1f),
-                    enabled = currentFeature != Screen.Basic
-                ) { BrutalButtonText("BASIC") }
-                BrutalButton(
-                    onClick = { navigateTo(Screen.Mixer) },
-                    modifier = Modifier.weight(1f),
-                    enabled = currentFeature != Screen.Mixer
-                ) { BrutalButtonText("MIXER") }
-                BrutalButton(
-                    onClick = { navigateTo(Screen.Book) },
-                    modifier = Modifier.weight(1f),
-                    enabled = currentFeature != Screen.Book
-                ) { BrutalButtonText("BOOK") }
-                BrutalButton(
-                    onClick = {
+            ModernBottomBar(
+                currentScreen = currentScreen,
+                onNavigate = { screen ->
+                    if (screen == Screen.Chat) {
                         context.startActivity(Intent(context, ChatActivity::class.java))
-                    },
-                    modifier = Modifier.weight(1f)
-                ) { BrutalButtonText("CHAT") }
-                BrutalButton(
-                    onClick = { navigateTo(Screen.More) },
-                    modifier = Modifier.weight(1f),
-                    enabled = currentFeature != Screen.More
-                ) { BrutalButtonText("MORE") }
-            }
+                    } else {
+                        navigateTo(screen)
+                    }
+                }
+            )
         }
     ) { innerPadding ->
         Box(

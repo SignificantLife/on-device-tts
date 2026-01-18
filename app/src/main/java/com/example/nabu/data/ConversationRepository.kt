@@ -9,7 +9,8 @@ import com.google.gson.reflect.TypeToken
 
 object ConversationRepository {
     private val gson = Gson()
-    private val messageListType = object : TypeToken<List<ConversationTurn>>() {}.type
+    private val messageListType =
+        TypeToken.getParameterized(List::class.java, ConversationTurn::class.java).type
 
     fun createConversation(
         context: Context,
