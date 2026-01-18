@@ -35,6 +35,7 @@ import com.example.nabu.data.Model
 import com.example.nabu.data.UserPreferencesRepository
 import com.mewmix.nabu.ui.brutalist.BrutalButton
 import com.mewmix.nabu.ui.brutalist.BrutalButtonText
+import com.mewmix.nabu.ui.brutalist.Brutal
 import com.mewmix.nabu.ui.brutalist.PanelBox
 import com.mewmix.nabu.ui.brutalist.SwitchToggle
 import kotlinx.coroutines.Dispatchers
@@ -61,7 +62,7 @@ fun InitScreen(
     val modelManager = remember { ModelManager(context) }
     val modelDownloader = remember { ModelDownloader(context, userPreferencesRepository) }
     val progressMap by modelDownloader.progress.collectAsState()
-    val ttsModels = remember { modelManager.models.filter { it.type == ModelType.TTS } }
+    val ttsModels = modelManager.models.filter { it.type == ModelType.TTS }
     var selectedModel by remember { mutableStateOf<Model?>(ttsModels.firstOrNull()) }
 
     LaunchedEffect(engine) {
@@ -183,7 +184,8 @@ fun InitScreen(
                         )
                         Text(
                             "${formatBytes(current.downloadedBytes)} / ${formatBytes(current.totalBytes)}",
-                            style = MaterialTheme.typography.bodySmall
+                            style = MaterialTheme.typography.bodySmall,
+                            color = Brutal.textBright
                         )
                     }
                 }
@@ -197,7 +199,8 @@ fun InitScreen(
                     )
                     Text(
                         "Downloading ${selectedModel?.name ?: "model"} ${(modelProgress * 100).toInt()}%",
-                        style = MaterialTheme.typography.bodySmall
+                        style = MaterialTheme.typography.bodySmall,
+                        color = Brutal.textBright
                     )
                 }
             }
@@ -205,6 +208,9 @@ fun InitScreen(
             BrutalButton(
                 onClick = {
                     SettingsManager.setTtsEngine(context, engine)
+                    if (engine == "supertonic") {
+                        SettingsManager.setSupertonicModelId(context, selectedModel?.id)
+                    }
                     if (engine == "kokoro") {
                         SettingsManager.setKokoroAutoDownload(context, downloadNow)
                     }

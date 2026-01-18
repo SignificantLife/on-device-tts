@@ -82,9 +82,12 @@ fun MixerScreen(
         val preferredEngine = SettingsManager.getTtsEngine(context)
         isSupertonic = preferredEngine == "supertonic"
         if (isSupertonic) {
-            hasSupertonicModels = modelManager.models.any { model ->
+            val selectedId = SettingsManager.getSupertonicModelId(context)
+            val downloadedModels = modelManager.models.filter { model ->
                 model.type == ModelType.TTS && model.isDownloaded
             }
+            val selectedModel = selectedId?.let { id -> downloadedModels.firstOrNull { it.id == id } }
+            hasSupertonicModels = if (selectedId != null) selectedModel != null else downloadedModels.isNotEmpty()
             runtimeStatus = null
         } else {
             val result = withContext(Dispatchers.IO) {
@@ -132,7 +135,11 @@ fun MixerScreen(
             )
             if (isSupertonic && !hasSupertonicModels) {
                 Text(
-                    text = "No Supertonic voice models found. Open Models to download one.",
+                    text = if (SettingsManager.getSupertonicModelId(context) != null) {
+                        "Selected Supertonic model is not downloaded yet. Open Models to download it."
+                    } else {
+                        "No Supertonic voice models found. Open Models to download one."
+                    },
                     color = MaterialTheme.colorScheme.error
                 )
             }

@@ -564,9 +564,12 @@ fun BasicScreen(
         isSupertonic = preferredEngine == "supertonic"
         if (isSupertonic) {
             val modelManager = ModelManager(context)
-            hasSupertonicModels = modelManager.models.any { model ->
+            val selectedId = SettingsManager.getSupertonicModelId(context)
+            val downloadedModels = modelManager.models.filter { model ->
                 model.type == ModelType.TTS && model.isDownloaded
             }
+            val selectedModel = selectedId?.let { id -> downloadedModels.firstOrNull { it.id == id } }
+            hasSupertonicModels = if (selectedId != null) selectedModel != null else downloadedModels.isNotEmpty()
             modelState = ModelState.Ready
         } else {
             hasLocalModels = Downloader.modelsAvailable(
@@ -654,7 +657,11 @@ fun BasicScreen(
 
             if (isSupertonic && !hasSupertonicModels) {
                 Text(
-                    text = "No Supertonic voice models found. Open Models to download one.",
+                    text = if (SettingsManager.getSupertonicModelId(context) != null) {
+                        "Selected Supertonic model is not downloaded yet. Open Models to download it."
+                    } else {
+                        "No Supertonic voice models found. Open Models to download one."
+                    },
                     color = MaterialTheme.colorScheme.error
                 )
             }

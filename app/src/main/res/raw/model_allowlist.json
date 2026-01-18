@@ -38,5 +38,13 @@
     "downloadUrl": "https://huggingface.co/Supertone/supertonic/resolve/main/onnx/",
     "gated": false,
     "type": "TTS"
+  },
+  "supertonic-2-onnx": {
+    "name": "Supertonic 2 TTS",
+    "description": "Supertonic 2 text-to-speech model",
+    "repo": "Supertone/supertonic-2",
+    "downloadUrl": "https://huggingface.co/Supertone/supertonic-2/resolve/main/onnx/",
+    "gated": false,
+    "type": "TTS"
   }
 }

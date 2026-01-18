@@ -6,6 +6,7 @@ import com.example.nabu.kokoro.RunEp
 object SettingsManager {
     private const val KEY_INIT_COMPLETE = "init_complete"
     private const val KEY_KOKORO_AUTO_DOWNLOAD = "kokoro_auto_download"
+    private const val KEY_SUPERTONIC_MODEL_ID = "supertonic_model_id"
 
     fun setDebug(context: Context, enabled: Boolean) {
         DatabaseManager.setSetting(context, "debug", if (enabled) "1" else "0")
@@ -75,4 +76,15 @@ object SettingsManager {
         val fallback = if (default) "1" else "0"
         return (DatabaseManager.getSetting(context, KEY_KOKORO_AUTO_DOWNLOAD) ?: fallback) == "1"
     }
+
+    fun setSupertonicModelId(context: Context, modelId: String?) {
+        if (modelId.isNullOrBlank()) {
+            DatabaseManager.setSetting(context, KEY_SUPERTONIC_MODEL_ID, "")
+        } else {
+            DatabaseManager.setSetting(context, KEY_SUPERTONIC_MODEL_ID, modelId)
+        }
+    }
+
+    fun getSupertonicModelId(context: Context): String? =
+        DatabaseManager.getSetting(context, KEY_SUPERTONIC_MODEL_ID)?.ifBlank { null }
 }

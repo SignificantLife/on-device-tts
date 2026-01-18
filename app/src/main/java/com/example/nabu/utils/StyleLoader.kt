@@ -18,7 +18,15 @@ class StyleLoader(private val context: Context) {
                 val modelManager = ModelManager(context)
                 val ttsModels = modelManager.models.filter { it.type == com.example.nabu.data.ModelType.TTS && it.isDownloaded }
                 if (ttsModels.isNotEmpty()) {
-                    val model = ttsModels.first()
+                    val preferredModelId = SettingsManager.getSupertonicModelId(context)
+                    val model = if (preferredModelId != null) {
+                        ttsModels.firstOrNull { it.id == preferredModelId }
+                    } else {
+                        ttsModels.first()
+                    }
+                    if (model == null) {
+                        return emptyList()
+                    }
                     val voicesDir = File(context.filesDir, "models/${model.id}/voice_styles")
                     if (voicesDir.exists()) {
                         return voicesDir.listFiles { _, name -> name.endsWith(".json") }

@@ -42,6 +42,8 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.material3.HorizontalDivider
+import com.example.nabu.data.ModelManager
+import com.example.nabu.data.ModelType
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -53,6 +55,10 @@ fun SettingsScreen() {
     var runtime by remember { mutableStateOf(SettingsManager.getRuntimePreference(context)) }
     var expanded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val modelManager = remember { ModelManager(context) }
+    val ttsModels = modelManager.models.filter { it.type == ModelType.TTS }
+    var supertonicExpanded by remember { mutableStateOf(false) }
+    var supertonicModelId by remember { mutableStateOf(SettingsManager.getSupertonicModelId(context)) }
 
     LaunchedEffect(runtime) {
         withContext(Dispatchers.IO) {
@@ -191,6 +197,47 @@ fun SettingsScreen() {
                         )
                     }
                 }
+            }
+
+            if (ttsEngine == "supertonic" && ttsModels.isNotEmpty()) {
+                ExposedDropdownMenuBox(
+                    expanded = supertonicExpanded,
+                    onExpandedChange = { supertonicExpanded = it }
+                ) {
+                    TextField(
+                        value = ttsModels.firstOrNull { it.id == supertonicModelId }?.name ?: "Select Supertonic model",
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text("Supertonic Model") },
+                        trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = supertonicExpanded) },
+                        modifier = Modifier.menuAnchor().fillMaxWidth()
+                    )
+                    DropdownMenu(
+                        expanded = supertonicExpanded,
+                        onDismissRequest = { supertonicExpanded = false }
+                    ) {
+                        ttsModels.forEach { model ->
+                            val label = if (model.isDownloaded) {
+                                model.name
+                            } else {
+                                "${model.name} (not downloaded)"
+                            }
+                            DropdownMenuItem(
+                                text = { Text(label) },
+                                onClick = {
+                                    supertonicModelId = model.id
+                                    SettingsManager.setSupertonicModelId(context, model.id)
+                                    supertonicExpanded = false
+                                }
+                            )
+                        }
+                    }
+                }
+            } else if (ttsEngine == "supertonic") {
+                Text(
+                    text = "No Supertonic models available. Open Models to download one.",
+                    color = MaterialTheme.colorScheme.error
+                )
             }
 
             val commitHash = BuildConfig.GIT_COMMIT_HASH

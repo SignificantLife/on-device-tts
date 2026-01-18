@@ -10,14 +10,18 @@ import java.io.File
 import kotlin.random.Random
 
 class DebugSupertonicEngine(
-    private val delegate: SupertonicEngine,
+    private val delegate: ISupertonicEngine,
     private val modelDir: File
 ) : AutoCloseable, TTSEngine {
 
     private var defaultStyle: SupertonicStyle? = null
 
     constructor(modelDir: File, env: OrtEnvironment = OrtEnvironment.getEnvironment()) : this(
-        SupertonicEngine(modelDir, env),
+        if (modelDir.name.contains("supertonic-2") || File(modelDir, "config.json").exists()) {
+            Supertonic2Engine(modelDir, env)
+        } else {
+            SupertonicEngine(modelDir, env)
+        },
         modelDir
     )
 
@@ -29,7 +33,7 @@ class DebugSupertonicEngine(
         try {
             val styleFile = File(modelDir, "voice_styles/F1.json")
             if (styleFile.exists()) {
-                defaultStyle = SupertonicEngine.loadStyle(listOf(styleFile))
+                defaultStyle = loadSupertonicStyle(listOf(styleFile))
                 DebugLogger.log("DebugSupertonicEngine: Loaded default style from ${styleFile.name}")
             } else {
                  DebugLogger.log("DebugSupertonicEngine: Default style not found at ${styleFile.absolutePath}")
@@ -43,7 +47,7 @@ class DebugSupertonicEngine(
         try {
             val styleFile = File(modelDir, "voice_styles/$styleName.json")
             if (styleFile.exists()) {
-                defaultStyle = SupertonicEngine.loadStyle(listOf(styleFile))
+                defaultStyle = loadSupertonicStyle(listOf(styleFile))
                 DebugLogger.log("DebugSupertonicEngine: Switched style to $styleName")
             } else {
                 DebugLogger.log("DebugSupertonicEngine: Style $styleName not found at ${styleFile.absolutePath}")

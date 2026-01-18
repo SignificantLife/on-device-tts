@@ -67,7 +67,13 @@ class ModelDownloader(
         // Root: https://huggingface.co/Supertone/supertonic/resolve/main/
 
         val baseUrl = model.downloadUrl.removeSuffix("onnx/")
-        val voiceStyles = listOf("F1.json", "F2.json", "M1.json", "M2.json")
+        val voiceStyles = when (model.id) {
+            "supertonic-2-onnx" -> listOf(
+                "F1.json", "F2.json", "F3.json", "F4.json", "F5.json",
+                "M1.json", "M2.json", "M3.json", "M4.json", "M5.json"
+            )
+            else -> listOf("F1.json", "F2.json", "M1.json", "M2.json")
+        }
 
         val filesToDownload = onnxFiles.map { "onnx/$it" } + voiceStyles.map { "voice_styles/$it" }
 

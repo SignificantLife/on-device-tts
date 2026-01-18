@@ -19,12 +19,14 @@ object TTSManager {
     private var activeEngine: TTSEngine? = null
     private var activeType: ModelType = ModelType.LLM // default to LLM/Kokoro logic
     private var activeRuntimePreference: RunEp? = null
+    private var activeSupertonicModelId: String? = null
     // Wait, ModelType.LLM is confusing here. I should use a specific TTS type enum or just check.
     // Let's use string id or a separate enum.
 
     suspend fun getEngine(context: Context, modelManager: ModelManager): TTSEngine? {
         val preferredEngine = SettingsManager.getTtsEngine(context)
         val preferredRuntime = SettingsManager.getRuntimePreference(context)
+        val preferredSupertonicModel = SettingsManager.getSupertonicModelId(context)
 
         if (activeEngine != null) {
             // Check if active engine matches preference.
@@ -40,10 +42,20 @@ object TTSManager {
                 activeEngine?.close()
                 activeEngine = null
                 activeRuntimePreference = null
+                activeSupertonicModelId = null
             } else if (preferredEngine == "kokoro" && isSupertonic) {
                 activeEngine?.close()
                 activeEngine = null
                 activeRuntimePreference = null
+                activeSupertonicModelId = null
+            } else if (preferredEngine == "supertonic" &&
+                preferredSupertonicModel != null &&
+                activeSupertonicModelId != preferredSupertonicModel
+            ) {
+                activeEngine?.close()
+                activeEngine = null
+                activeRuntimePreference = null
+                activeSupertonicModelId = null
             } else if (preferredEngine == "kokoro" && activeRuntimePreference != preferredRuntime) {
                 activeEngine?.close()
                 activeEngine = null
@@ -54,24 +66,35 @@ object TTSManager {
         }
 
         if (preferredEngine == "supertonic") {
-             val ttsModels = modelManager.models.filter { it.type == ModelType.TTS && it.isDownloaded }
-             if (ttsModels.isNotEmpty()) {
-                 val model = ttsModels.first()
-                 val modelDir = File(context.filesDir, "models/${model.id}")
-                 try {
-                     val engine = DebugSupertonicEngine(modelDir)
-                     activeEngine = BenchmarkingTTSEngine(engine)
-                     activeRuntimePreference = null
-                     DebugLogger.log("TTSManager: Switched to Supertonic (${model.name})")
-                     return activeEngine
-                 } catch (e: Exception) {
-                     DebugLogger.log("TTSManager: Failed to load Supertonic: ${e.message}")
-                     // Fallback to Kokoro? Or just return null?
-                     // Let's fall back to Kokoro to be safe.
-                 }
-             } else {
-                 DebugLogger.log("TTSManager: Supertonic selected but no model found.")
-             }
+            val ttsModels = modelManager.models.filter { it.type == ModelType.TTS && it.isDownloaded }
+            val selectedModel = preferredSupertonicModel?.let { modelId ->
+                ttsModels.firstOrNull { it.id == modelId }
+            }
+            val model = if (preferredSupertonicModel != null) {
+                selectedModel
+            } else {
+                ttsModels.firstOrNull()
+            }
+            if (model != null) {
+                val modelDir = File(context.filesDir, "models/${model.id}")
+                try {
+                    val engine = DebugSupertonicEngine(modelDir)
+                    activeEngine = BenchmarkingTTSEngine(engine)
+                    activeRuntimePreference = null
+                    activeSupertonicModelId = model.id
+                    DebugLogger.log("TTSManager: Switched to Supertonic (${model.name})")
+                    return activeEngine
+                } catch (e: Exception) {
+                    DebugLogger.log("TTSManager: Failed to load Supertonic: ${e.message}")
+                    // Fallback to Kokoro? Or just return null?
+                    // Let's fall back to Kokoro to be safe.
+                }
+            } else if (preferredSupertonicModel != null) {
+                DebugLogger.log("TTSManager: Supertonic selected model missing: $preferredSupertonicModel")
+                return null
+            } else {
+                DebugLogger.log("TTSManager: Supertonic selected but no model found.")
+            }
         }
 
         // Fallback or default to Kokoro
