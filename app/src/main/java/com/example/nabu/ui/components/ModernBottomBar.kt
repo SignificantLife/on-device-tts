@@ -1,6 +1,8 @@
 package com.example.nabu.ui.components
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
@@ -44,6 +46,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.example.nabu.R
 import com.mewmix.nabu.ui.brutalist.Brutal
 
@@ -114,7 +117,10 @@ private fun BottomNavItem(
     val isPressed by interactionSource.collectIsPressedAsState()
     
     LaunchedEffect(isPressed) {
-        if (isPressed && com.example.nabu.utils.SettingsManager.isVibrationsEnabled(context)) {
+        if (isPressed &&
+            com.example.nabu.utils.SettingsManager.isVibrationsEnabled(context) &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.VIBRATE) == PackageManager.PERMISSION_GRANTED
+        ) {
             val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 val vibratorManager = context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
                 vibratorManager.defaultVibrator
