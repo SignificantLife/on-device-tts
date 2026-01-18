@@ -91,11 +91,7 @@ fun InitScreen(
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
             Text(
-                text = if (engine == "supertonic") {
-                    "Choose your TTS engine and whether to download Supertonic voice models now."
-                } else {
-                    "Choose your TTS engine and whether to download Kokoro voice models now."
-                },
+                text = "Welcome to Nabu! Please pick which text-to-voice model you want to use.\n\nThis can be changed later from settings. If you don't know which one to pick, just use the default.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurface
             )
@@ -188,20 +184,6 @@ fun InitScreen(
                             color = Brutal.textBright
                         )
                     }
-                }
-            } else {
-                val modelId = selectedModel?.id
-                val modelProgress = modelId?.let { progressMap[it] }
-                if (modelProgress != null) {
-                    LinearProgressIndicator(
-                        progress = { modelProgress.coerceIn(0f, 1f) },
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    Text(
-                        "Downloading ${selectedModel?.name ?: "model"} ${(modelProgress * 100).toInt()}%",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = Brutal.textBright
-                    )
                 }
             }
 
