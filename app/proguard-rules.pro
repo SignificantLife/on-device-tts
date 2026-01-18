@@ -34,5 +34,15 @@
 -keepattributes Signature
 -keepattributes *Annotation*
 
+# LiteRT / MediaPipe LLM rules (prevent proto field stripping)
+-keep class com.google.ai.edge.litert.** { *; }
+-keep class com.google.mediapipe.** { *; }
+-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite { *; }
+-keepclassmembers class * extends com.google.protobuf.GeneratedMessageLite$Builder { *; }
+-keepattributes InnerClasses,EnclosingMethod
+-dontwarn com.google.auto.value.extension.memoized.Memoized
+-dontwarn com.google.mediapipe.proto.CalculatorProfileProto$CalculatorProfile
+-dontwarn com.google.mediapipe.proto.GraphTemplateProto$CalculatorGraphTemplate
+
 # Keep BuildConfig
 -keep class com.example.nabu.BuildConfig { *; }
