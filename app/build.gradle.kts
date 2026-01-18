@@ -8,11 +8,11 @@ plugins {
 }
 
 android {
-    namespace = "com.example.nabu"
+    namespace = "com.mewmix.nabu"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.example.nabu"
+        applicationId = "com.mewmix.nabu"
         minSdk = 29
         targetSdk = 35
         versionCode = 4
