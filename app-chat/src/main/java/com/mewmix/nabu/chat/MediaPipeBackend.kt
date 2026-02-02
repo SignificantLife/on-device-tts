@@ -5,16 +5,15 @@ import com.mewmix.nabu.utils.DebugLogger
 import com.google.mediapipe.tasks.genai.llminference.LlmInference
 import com.google.mediapipe.tasks.genai.llminference.LlmInference.LlmInferenceOptions
 
-
-class LlmInference(
+class MediaPipeBackend(
     private val context: Context,
     private val modelPath: String
-) {
+) : LlmBackend {
 
     private var llmInference: LlmInference? = null
 
-    fun initialize() {
-        DebugLogger.log("LlmInference initialize with model $modelPath")
+    override fun initialize() {
+        DebugLogger.log("MediaPipeBackend initialize with model $modelPath")
         val options = LlmInferenceOptions.builder()
             .setModelPath(modelPath)
             .build()
@@ -22,12 +21,12 @@ class LlmInference(
         llmInference = LlmInference.createFromOptions(context, options)
     }
 
-    fun sendMessage(
+    override fun sendMessage(
         conversation: List<LlmMessage>,
         resultListener: (partialResult: String, done: Boolean) -> Unit
     ) {
         if (conversation.isEmpty()) {
-            DebugLogger.log("LlmInference sendMessage received empty conversation; aborting request")
+            DebugLogger.log("MediaPipeBackend sendMessage received empty conversation; aborting request")
             return
         }
         if (llmInference == null) {
@@ -35,16 +34,16 @@ class LlmInference(
         }
 
         val payload = buildConversationPayload(conversation)
-        DebugLogger.log("LlmInference sendMessage with ${conversation.size} turns")
+        DebugLogger.log("MediaPipeBackend sendMessage with ${conversation.size} turns")
         llmInference?.generateResponseAsync(payload, resultListener)
     }
 
-    fun sendMessage(prompt: String, resultListener: (partialResult: String, done: Boolean) -> Unit) {
+    override fun sendMessage(prompt: String, resultListener: (partialResult: String, done: Boolean) -> Unit) {
         if (llmInference == null) {
             initialize()
         }
 
-        DebugLogger.log("LlmInference sendMessage: $prompt")
+        DebugLogger.log("MediaPipeBackend sendMessage: $prompt")
         llmInference?.generateResponseAsync(prompt, resultListener)
     }
 
@@ -57,7 +56,7 @@ class LlmInference(
         return sb.toString()
     }
 
-    fun close() {
+    override fun close() {
         llmInference?.close()
     }
 

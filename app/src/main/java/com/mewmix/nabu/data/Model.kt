@@ -15,4 +15,5 @@ data class Model(
     val type: ModelType = ModelType.LLM,
     var isDownloaded: Boolean = false,
     var hasPartial: Boolean = false,
+    var backend: String = "mediapipe"
 )

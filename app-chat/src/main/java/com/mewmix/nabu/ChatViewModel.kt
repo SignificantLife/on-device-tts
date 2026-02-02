@@ -12,7 +12,7 @@ import java.lang.StringBuilder
 
 data class ChatMessage(val message: String, val isFromUser: Boolean)
 
-class ChatViewModel(private val llmInference: LlmInference) : ViewModel() {
+class ChatViewModel(private val llmBackend: LlmBackend) : ViewModel() {
 
     private val _chatState = MutableStateFlow<List<ChatMessage>>(emptyList())
     val chatState: StateFlow<List<ChatMessage>> = _chatState.asStateFlow()
@@ -32,7 +32,7 @@ class ChatViewModel(private val llmInference: LlmInference) : ViewModel() {
 
         viewModelScope.launch(Dispatchers.IO) {
             val responseBuilder = StringBuilder()
-            llmInference.sendMessage(conversationHistory.toList()) { partialResult, done ->
+            llmBackend.sendMessage(conversationHistory.toList()) { partialResult, done ->
                 if (done) {
                     _isLoading.value = false
                     DebugLogger.log("ChatViewModel response complete")
@@ -57,6 +57,6 @@ class ChatViewModel(private val llmInference: LlmInference) : ViewModel() {
 
     override fun onCleared() {
         super.onCleared()
-        llmInference.close()
+        llmBackend.close()
     }
 }
