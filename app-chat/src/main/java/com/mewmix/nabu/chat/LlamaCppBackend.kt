@@ -8,11 +8,32 @@ import kotlinx.coroutines.launch
 
 class LlamaCppBackend(
     private val context: Context,
-    private val modelPath: String
+    private val modelPath: String,
+    initialConfig: LlmRuntimeConfig
 ) : LlmBackend {
 
     private val initLock = Any()
+    @Volatile private var config: LlmRuntimeConfig = initialConfig
     private var modelHandle: Long = 0L
+
+    val currentConfig: LlmRuntimeConfig
+        get() = config
+
+    fun updateConfig(newConfig: LlmRuntimeConfig) {
+        val oldConfig = config
+        val needsReinit = modelHandle != 0L &&
+            (oldConfig.nCtx != newConfig.nCtx || oldConfig.nBatch != newConfig.nBatch)
+        config = newConfig
+        if (modelHandle != 0L && LlamaBridge.isAvailable) {
+            if (needsReinit) {
+                DebugLogger.log("LlamaCppBackend config change requires reinit; closing existing context")
+                LlamaBridge.close(modelHandle)
+                modelHandle = 0L
+            } else {
+                LlamaBridge.setThreads(modelHandle, newConfig.nThreads, newConfig.nThreadsBatch)
+            }
+        }
+    }
 
     override fun initialize() {
         if (modelHandle != 0L) return
@@ -23,7 +44,14 @@ class LlamaCppBackend(
                 return
             }
             DebugLogger.log("LlamaCppBackend initialize start: $modelPath")
-            modelHandle = LlamaBridge.init(modelPath)
+            val localConfig = config
+            modelHandle = LlamaBridge.init(
+                modelPath,
+                localConfig.nCtx,
+                localConfig.nBatch,
+                localConfig.nThreads,
+                localConfig.nThreadsBatch
+            )
             if (modelHandle == 0L) {
                 DebugLogger.log("LlamaCppBackend failed to initialize model")
             } else {
@@ -51,15 +79,35 @@ class LlamaCppBackend(
         val prompt = buildConversationPrompt(conversation)
         DebugLogger.log("LlamaCppBackend sendMessage with ${conversation.size} turns")
         CoroutineScope(Dispatchers.IO).launch {
-            val response = LlamaBridge.generate(modelHandle, prompt)
-            if (response.isEmpty()) {
-                resultListener("", true)
-                return@launch
+            val localConfig = config
+            val callback = object : LlamaBridge.TokenCallback {
+                override fun onToken(chunk: String) {
+                    if (chunk.isNotEmpty()) {
+                        resultListener(chunk, false)
+                    }
+                }
+
+                override fun onComplete() {
+                    resultListener("", true)
+                }
+
+                override fun onError(message: String) {
+                    DebugLogger.log("LlamaCppBackend generation error: $message")
+                    resultListener("", true)
+                }
             }
-            response.split(" ").forEach { chunk ->
-                resultListener("$chunk ", false)
+
+            val ok = LlamaBridge.generate(
+                modelHandle,
+                prompt,
+                localConfig.maxNewTokens,
+                localConfig.ttftTimeoutMs,
+                localConfig.totalTimeoutMs,
+                callback
+            )
+            if (!ok) {
+                resultListener("Llama.cpp backend unavailable.", true)
             }
-            resultListener("", true)
         }
     }
 
@@ -77,8 +125,35 @@ class LlamaCppBackend(
 
         DebugLogger.log("LlamaCppBackend sendMessage: ${prompt.take(120)}")
         CoroutineScope(Dispatchers.IO).launch {
-            val response = LlamaBridge.generate(modelHandle, prompt)
-            resultListener(response, true)
+            val localConfig = config
+            val callback = object : LlamaBridge.TokenCallback {
+                override fun onToken(chunk: String) {
+                    if (chunk.isNotEmpty()) {
+                        resultListener(chunk, false)
+                    }
+                }
+
+                override fun onComplete() {
+                    resultListener("", true)
+                }
+
+                override fun onError(message: String) {
+                    DebugLogger.log("LlamaCppBackend generation error: $message")
+                    resultListener("", true)
+                }
+            }
+
+            val ok = LlamaBridge.generate(
+                modelHandle,
+                prompt,
+                localConfig.maxNewTokens,
+                localConfig.ttftTimeoutMs,
+                localConfig.totalTimeoutMs,
+                callback
+            )
+            if (!ok) {
+                resultListener("Llama.cpp backend unavailable.", true)
+            }
         }
     }
 
@@ -103,5 +178,11 @@ class LlamaCppBackend(
         }
         modelHandle = 0L
         DebugLogger.log("LlamaCppBackend close")
+    }
+
+    override fun cancel() {
+        if (modelHandle != 0L && LlamaBridge.isAvailable) {
+            LlamaBridge.cancel(modelHandle)
+        }
     }
 }

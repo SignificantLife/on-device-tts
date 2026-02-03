@@ -47,6 +47,10 @@ class MediaPipeBackend(
         llmInference?.generateResponseAsync(prompt, resultListener)
     }
 
+    override fun cancel() {
+        // No-op: MediaPipe async API does not expose a cancel hook in this integration.
+    }
+
     private fun buildConversationPayload(conversation: List<LlmMessage>): String {
         val sb = StringBuilder()
         conversation.forEach { message ->

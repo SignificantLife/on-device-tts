@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import com.mewmix.nabu.chat.ChatMessage
 import com.mewmix.nabu.chat.LlmBackend
 import com.mewmix.nabu.chat.LlamaCppBackend
+import com.mewmix.nabu.chat.LlmRuntimeOverrides
 import com.mewmix.nabu.chat.MediaPipeBackend
 import com.mewmix.nabu.chat.LlmMessage
 import com.mewmix.nabu.data.Conversation
@@ -44,7 +45,8 @@ import java.util.Locale
 
 class ChatViewModel(
     private val context: Context,
-    initialModelId: String
+    initialModelId: String,
+    private val llmOverrides: LlmRuntimeOverrides? = null
 ) : ViewModel() {
 
     companion object {
@@ -256,7 +258,13 @@ class ChatViewModel(
         val sentenceBuilder = StringBuilder()
         _chatMessages.value += ChatMessage("...", false) // placeholder
 
-        val conversationForModel = prepareConversationForModel(DEFAULT_MAX_CONTEXT_TOKENS)
+        val runtimeConfig = SettingsManager.getLlmRuntimeConfig(context, llmOverrides)
+        val backendMaxTokens = (backend as? LlamaCppBackend)?.let {
+            it.updateConfig(runtimeConfig)
+            it.currentConfig.nCtx
+        } ?: DEFAULT_MAX_CONTEXT_TOKENS
+
+        val conversationForModel = prepareConversationForModel(backendMaxTokens)
 
         viewModelScope.launch(Dispatchers.IO) {
             backend.sendMessage(conversationForModel) { partial, done ->
@@ -296,6 +304,10 @@ class ChatViewModel(
                 }
             }
         }
+    }
+
+    fun cancelGeneration() {
+        llmBackend?.cancel()
     }
 
     private fun refreshConversations(desiredActiveId: Long? = null) {
@@ -414,7 +426,8 @@ class ChatViewModel(
                 llmBackend = null
                 return
             }
-            val backend = LlamaCppBackend(context, ggufFile.absolutePath)
+            val runtimeConfig = SettingsManager.getLlmRuntimeConfig(context, llmOverrides)
+            val backend = LlamaCppBackend(context, ggufFile.absolutePath, runtimeConfig)
             llmBackend = backend
             viewModelScope.launch(Dispatchers.IO) {
                 backend.initialize()

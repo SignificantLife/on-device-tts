@@ -13,5 +13,7 @@ interface LlmBackend {
         resultListener: (partialResult: String, done: Boolean) -> Unit
     )
 
+    fun cancel()
+
     fun close()
 }
