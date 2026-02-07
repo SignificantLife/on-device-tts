@@ -64,6 +64,11 @@ fun SettingsScreen() {
     val runtimeOptions = if (ttsEngine == "supertonic") listOf(RunEp.CPU) else RunEp.values().toList()
     val allowRuntimeSelection = runtimeOptions.size > 1
     val displayRuntime = if (ttsEngine == "supertonic") RunEp.CPU else runtime
+    var llmThreadsAuto by remember { mutableStateOf(SettingsManager.isLlmThreadsAuto(context)) }
+    var llmThreads by remember { mutableStateOf(SettingsManager.getLlmThreads(context).toString()) }
+    var llmMaxTokens by remember { mutableStateOf(SettingsManager.getLlmMaxNewTokens(context).toString()) }
+    var llmTtftTimeout by remember { mutableStateOf(SettingsManager.getLlmTtftTimeoutMs(context).toString()) }
+    var llmTotalTimeout by remember { mutableStateOf(SettingsManager.getLlmTotalTimeoutMs(context).toString()) }
 
     LaunchedEffect(runtime) {
         withContext(Dispatchers.IO) {
@@ -204,6 +209,68 @@ fun SettingsScreen() {
                     color = MaterialTheme.colorScheme.error
                 )
             }
+
+            HorizontalDivider()
+
+            Text(
+                text = "LLM Settings",
+                style = MaterialTheme.typography.titleMedium
+            )
+
+            SwitchToggle(
+                checked = llmThreadsAuto,
+                onToggle = {
+                    llmThreadsAuto = it
+                    SettingsManager.setLlmThreadsAuto(context, it)
+                },
+                label = "Threads: Auto"
+            )
+
+            if (!llmThreadsAuto) {
+                TextField(
+                    value = llmThreads,
+                    onValueChange = { value ->
+                        val filtered = value.filter { it.isDigit() }
+                        llmThreads = filtered
+                        filtered.toIntOrNull()?.let { SettingsManager.setLlmThreads(context, it) }
+                    },
+                    label = { Text("Threads") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+
+            TextField(
+                value = llmMaxTokens,
+                onValueChange = { value ->
+                    val filtered = value.filter { it.isDigit() }
+                    llmMaxTokens = filtered
+                    filtered.toIntOrNull()?.let { SettingsManager.setLlmMaxNewTokens(context, it) }
+                },
+                label = { Text("Max New Tokens") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            TextField(
+                value = llmTtftTimeout,
+                onValueChange = { value ->
+                    val filtered = value.filter { it.isDigit() }
+                    llmTtftTimeout = filtered
+                    filtered.toLongOrNull()?.let { SettingsManager.setLlmTtftTimeoutMs(context, it) }
+                },
+                label = { Text("TTFT Timeout (ms)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            TextField(
+                value = llmTotalTimeout,
+                onValueChange = { value ->
+                    val filtered = value.filter { it.isDigit() }
+                    llmTotalTimeout = filtered
+                    filtered.toLongOrNull()?.let { SettingsManager.setLlmTotalTimeoutMs(context, it) }
+                },
+                label = { Text("Total Timeout (ms)") },
+                modifier = Modifier.fillMaxWidth()
+            )
 
             val commitHash = BuildConfig.GIT_COMMIT_HASH.ifBlank { "unknown" }
             val shortHash = commitHash.take(7)

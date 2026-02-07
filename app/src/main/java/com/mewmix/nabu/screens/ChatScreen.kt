@@ -456,16 +456,25 @@ fun ChatScreen(
                     textStyle = MaterialTheme.typography.bodyLarge
                 )
                 Spacer(modifier = Modifier.width(8.dp))
-                BrutalButton(
-                    onClick = {
-                        if (message.isNotBlank()) {
-                            viewModel.sendMessage(message)
-                            message = ""
-                        }
-                    },
-                    enabled = message.isNotBlank() && !isLoading && !isSynthesizing && playerState == PlayerState.IDLE
-                ) {
-                    Icon(Icons.Default.Send, contentDescription = "Send", tint = Brutal.textBright)
+                if (isLoading) {
+                    BrutalButton(
+                        onClick = { viewModel.cancelGeneration() },
+                        enabled = true
+                    ) {
+                        Icon(Icons.Default.Stop, contentDescription = "Stop", tint = Brutal.textBright)
+                    }
+                } else {
+                    BrutalButton(
+                        onClick = {
+                            if (message.isNotBlank()) {
+                                viewModel.sendMessage(message)
+                                message = ""
+                            }
+                        },
+                        enabled = message.isNotBlank() && !isSynthesizing && playerState == PlayerState.IDLE
+                    ) {
+                        Icon(Icons.Default.Send, contentDescription = "Send", tint = Brutal.textBright)
+                    }
                 }
             }
         }

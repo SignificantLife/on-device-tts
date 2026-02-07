@@ -18,6 +18,7 @@ import com.mewmix.nabu.utils.DebugLogger
 import com.mewmix.nabu.utils.SettingsManager
 import com.mewmix.nabu.galleryport.PerfHud
 import com.mewmix.nabu.viewmodel.ChatViewModel
+import com.mewmix.nabu.chat.LlmRuntimeOverrides
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -25,7 +26,18 @@ import kotlinx.coroutines.withContext
 class ChatActivity : ComponentActivity() {
     companion object {
         const val EXTRA_INITIAL_PROMPT = "extra_initial_prompt"
+        const val EXTRA_LLM_THREADS_AUTO = "llm_threads_auto"
+        const val EXTRA_LLM_THREADS = "llm_threads"
+        const val EXTRA_LLM_THREADS_BATCH = "llm_threads_batch"
+        const val EXTRA_LLM_MAX_NEW_TOKENS = "llm_max_new_tokens"
+        const val EXTRA_LLM_N_CTX = "llm_n_ctx"
+        const val EXTRA_LLM_N_BATCH = "llm_n_batch"
+        const val EXTRA_LLM_TTFT_TIMEOUT_MS = "llm_ttft_timeout_ms"
+        const val EXTRA_LLM_TOTAL_TIMEOUT_MS = "llm_total_timeout_ms"
     }
+
+    private val llmOverrides: LlmRuntimeOverrides? by lazy { readLlmOverrides(intent) }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         DebugLogger.initialize(this)
@@ -89,7 +101,7 @@ class ChatActivity : ComponentActivity() {
                 override fun <T : ViewModel> create(modelClass: Class<T>): T {
                     if (modelClass.isAssignableFrom(ChatViewModel::class.java)) {
                         @Suppress("UNCHECKED_CAST")
-                        return ChatViewModel(applicationContext, model.id) as T
+                        return ChatViewModel(applicationContext, model.id, llmOverrides) as T
                     }
                     throw IllegalArgumentException("Unknown ViewModel class")
                 }
@@ -107,5 +119,48 @@ class ChatActivity : ComponentActivity() {
                 }
             }
         }
+    }
+
+    private fun readLlmOverrides(source: Intent?): LlmRuntimeOverrides? {
+        if (source == null) return null
+        var hasAny = false
+
+        fun <T> take(extra: String, getter: () -> T): T? {
+            return if (source.hasExtra(extra)) {
+                hasAny = true
+                getter()
+            } else {
+                null
+            }
+        }
+
+        val overrides = LlmRuntimeOverrides(
+            threadsAuto = take(EXTRA_LLM_THREADS_AUTO) {
+                source.getBooleanExtra(EXTRA_LLM_THREADS_AUTO, true)
+            },
+            nThreads = take(EXTRA_LLM_THREADS) {
+                source.getIntExtra(EXTRA_LLM_THREADS, 0)
+            },
+            nThreadsBatch = take(EXTRA_LLM_THREADS_BATCH) {
+                source.getIntExtra(EXTRA_LLM_THREADS_BATCH, 0)
+            },
+            maxNewTokens = take(EXTRA_LLM_MAX_NEW_TOKENS) {
+                source.getIntExtra(EXTRA_LLM_MAX_NEW_TOKENS, 0)
+            },
+            nCtx = take(EXTRA_LLM_N_CTX) {
+                source.getIntExtra(EXTRA_LLM_N_CTX, 0)
+            },
+            nBatch = take(EXTRA_LLM_N_BATCH) {
+                source.getIntExtra(EXTRA_LLM_N_BATCH, 0)
+            },
+            ttftTimeoutMs = take(EXTRA_LLM_TTFT_TIMEOUT_MS) {
+                source.getLongExtra(EXTRA_LLM_TTFT_TIMEOUT_MS, 0L)
+            },
+            totalTimeoutMs = take(EXTRA_LLM_TOTAL_TIMEOUT_MS) {
+                source.getLongExtra(EXTRA_LLM_TOTAL_TIMEOUT_MS, 0L)
+            }
+        )
+
+        return if (hasAny) overrides else null
     }
 }

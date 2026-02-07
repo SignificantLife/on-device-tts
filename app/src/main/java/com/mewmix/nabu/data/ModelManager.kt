@@ -62,28 +62,44 @@ class ModelManager(private val context: Context) {
                 val partialDir = File(modelDir, "${model.id}_partial")
                 model.hasPartial = !model.isDownloaded && partialDir.exists()
             } else {
-                val modelFile = File(modelDir, "${model.id}.task")
-                val partialFile = File(modelDir, "${model.id}.task.part")
-                model.isDownloaded = modelFile.exists()
-                model.hasPartial = !model.isDownloaded && partialFile.exists()
+                val taskFile = File(modelDir, "${model.id}.task")
+                val ggufFile = File(modelDir, "${model.id}.gguf")
+
+                if (taskFile.exists()) {
+                    model.isDownloaded = true
+                    model.backend = "mediapipe"
+                } else if (ggufFile.exists()) {
+                    model.isDownloaded = true
+                    model.backend = "llama"
+                } else {
+                    model.isDownloaded = false
+                    val taskPart = File(modelDir, "${model.id}.task.part")
+                    val ggufPart = File(modelDir, "${model.id}.gguf.part")
+                    model.hasPartial = taskPart.exists() || ggufPart.exists()
+
+                    val jsonBackend = modelJson.optString("backend", "mediapipe")
+                    model.backend = jsonBackend
+                }
             }
             modelList.add(model)
         }
 
         // Include any additional models already placed in the models directory
         val modelDir = File(context.filesDir, "models")
-        modelDir.listFiles { _, name -> name.endsWith(".task") }?.forEach { file ->
+        modelDir.listFiles { _, name -> name.endsWith(".task") || name.endsWith(".gguf") }?.forEach { file ->
             val id = file.nameWithoutExtension
             if (modelList.none { it.id == id }) {
+                val backend = if (file.name.endsWith(".gguf")) "llama" else "mediapipe"
                 modelList.add(
                     Model(
                         id = id,
                         name = id,
-                        description = "Local model",
+                        description = "Local model ($backend)",
                         repo = "",
                         downloadUrl = "",
                         gated = false,
                         isDownloaded = true,
+                        backend = backend
                     )
                 )
             }
@@ -109,6 +125,8 @@ class ModelManager(private val context: Context) {
         } else {
             File(modelDir, "${model.id}.task").delete()
             File(modelDir, "${model.id}.task.part").delete()
+            File(modelDir, "${model.id}.gguf").delete()
+            File(modelDir, "${model.id}.gguf.part").delete()
         }
 
         if (model.repo.isEmpty() && model.downloadUrl.isEmpty()) {

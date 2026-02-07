@@ -5,7 +5,10 @@ import android.os.SystemClock
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mewmix.nabu.chat.ChatMessage
-import com.mewmix.nabu.chat.LlmInference
+import com.mewmix.nabu.chat.LlmBackend
+import com.mewmix.nabu.chat.LlamaCppBackend
+import com.mewmix.nabu.chat.LlmRuntimeOverrides
+import com.mewmix.nabu.chat.MediaPipeBackend
 import com.mewmix.nabu.chat.LlmMessage
 import com.mewmix.nabu.data.Conversation
 import com.mewmix.nabu.data.ConversationRepository
@@ -42,7 +45,8 @@ import java.util.Locale
 
 class ChatViewModel(
     private val context: Context,
-    initialModelId: String
+    initialModelId: String,
+    private val llmOverrides: LlmRuntimeOverrides? = null
 ) : ViewModel() {
 
     companion object {
@@ -59,7 +63,7 @@ class ChatViewModel(
     }
 
     private val modelManager = ModelManager(context)
-    private var llmInference: LlmInference? = null
+    private var llmBackend: LlmBackend? = null
     private val conversationHistory = mutableListOf<ConversationTurn>()
 
     // Chat State
@@ -229,8 +233,8 @@ class ChatViewModel(
     fun sendMessage(message: String) {
         val trimmed = message.trim()
         if (trimmed.isEmpty()) return
-        val inference = llmInference ?: run {
-            DebugLogger.log("No LLM inference instance available; ignoring message")
+        val backend = llmBackend ?: run {
+            DebugLogger.log("No LLM backend available; ignoring message")
             return
         }
         val conversationId = _activeConversationId.value ?: run {
@@ -254,10 +258,16 @@ class ChatViewModel(
         val sentenceBuilder = StringBuilder()
         _chatMessages.value += ChatMessage("...", false) // placeholder
 
-        val conversationForModel = prepareConversationForModel(DEFAULT_MAX_CONTEXT_TOKENS)
+        val runtimeConfig = SettingsManager.getLlmRuntimeConfig(context, llmOverrides)
+        val backendMaxTokens = (backend as? LlamaCppBackend)?.let {
+            it.updateConfig(runtimeConfig)
+            it.currentConfig.nCtx
+        } ?: DEFAULT_MAX_CONTEXT_TOKENS
+
+        val conversationForModel = prepareConversationForModel(backendMaxTokens)
 
         viewModelScope.launch(Dispatchers.IO) {
-            inference.sendMessage(conversationForModel) { partial, done ->
+            backend.sendMessage(conversationForModel) { partial, done ->
                 if (benchmarkEnabled) {
                     if (!done) {
                         BenchmarkManager.recordPartial(partial)
@@ -294,6 +304,10 @@ class ChatViewModel(
                 }
             }
         }
+    }
+
+    fun cancelGeneration() {
+        llmBackend?.cancel()
     }
 
     private fun refreshConversations(desiredActiveId: Long? = null) {
@@ -393,21 +407,41 @@ class ChatViewModel(
     }
 
     private fun setActiveModel(model: Model, persistConversation: Boolean = true) {
-        if (_activeModel.value?.id == model.id && llmInference != null) {
+        if (_activeModel.value?.id == model.id && llmBackend != null) {
             _activeModel.value = model
             return
         }
         _activeModel.value = model
-        llmInference?.close()
-        val modelFile = File(context.filesDir, "models/${model.id}.task")
-        if (!modelFile.exists()) {
-            DebugLogger.log("Model file not found: ${modelFile.absolutePath}")
-            llmInference = null
-            return
+        llmBackend?.close()
+
+        val taskFile = File(context.filesDir, "models/${model.id}.task")
+        val ggufFile = File(context.filesDir, "models/${model.id}.gguf")
+
+        // Use backend set by ModelManager, or fallback to file existence check
+        val isLlama = model.backend == "llama" || (ggufFile.exists() && !taskFile.exists())
+
+        if (isLlama) {
+            if (!ggufFile.exists()) {
+                DebugLogger.log("GGUF Model file not found: ${ggufFile.absolutePath}")
+                llmBackend = null
+                return
+            }
+            val runtimeConfig = SettingsManager.getLlmRuntimeConfig(context, llmOverrides)
+            val backend = LlamaCppBackend(context, ggufFile.absolutePath, runtimeConfig)
+            llmBackend = backend
+            viewModelScope.launch(Dispatchers.IO) {
+                backend.initialize()
+            }
+        } else {
+            if (!taskFile.exists()) {
+                DebugLogger.log("Task Model file not found: ${taskFile.absolutePath}")
+                llmBackend = null
+                return
+            }
+            val backend = MediaPipeBackend(context, taskFile.absolutePath)
+            backend.initialize()
+            llmBackend = backend
         }
-        val inference = LlmInference(context, modelFile.absolutePath)
-        inference.initialize()
-        llmInference = inference
         if (persistConversation) {
             val conversationId = _activeConversationId.value
             if (conversationId != null) {
@@ -659,7 +693,7 @@ class ChatViewModel(
 
     override fun onCleared() {
         super.onCleared()
-        llmInference?.close()
+        llmBackend?.close()
         audioPlayer.stop()
     }
 }
