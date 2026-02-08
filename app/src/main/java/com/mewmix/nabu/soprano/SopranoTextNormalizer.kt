@@ -381,11 +381,8 @@ object SopranoTextNormalizer {
 
     private fun normalizeNewlines(text: String): String {
         return text.split("\n").joinToString(" ") { line ->
-            var l = line.trim()
-            if (l.isEmpty()) return@joinToString ""
-            if (!l.matches(Regex(".*[.!?]$"))) l += "."
-            l
-        }
+            line.trim()
+        }.trim()
     }
 
     private fun removeUnknownCharacters(text: String): String {

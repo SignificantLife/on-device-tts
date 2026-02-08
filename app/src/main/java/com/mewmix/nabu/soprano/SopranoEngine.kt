@@ -177,11 +177,9 @@ class SopranoEngine(
                 kvCache.clear()
                 activeResult = outputs
 
-                // Names in outputs
-                val outNames = outputs.names
-                // Logits is 0, LastHidden is last. Middle are KVs.
-                val logitsTensor = outputs.get(0) as OnnxTensor
-                val lastHiddenStateTensor = outputs.get(outNames.last()) as OnnxTensor
+                // Logits is index 0, last hidden state is last output; KVs are in between.
+                val logitsTensor = outputs[0] as OnnxTensor
+                val lastHiddenStateTensor = outputs[outputs.size() - 1] as OnnxTensor
 
                 // Correct Loop for KV Extraction
                 for (i in 0 until NUM_LAYERS) {
@@ -402,10 +400,10 @@ class SopranoEngine(
         val k = minOf(topK, vocabSize)
         val topKIndices = indices.take(k)
 
-        // Softmax on topK
-        val topKScores = topKIndices.map { scores[it] }
-        val maxScore = topKScores.maxOrNull() ?: 0f
-        val expScores = topKScores.map { exp(it - maxScore) }
+        // Softmax on topK (compute in Double for numerical stability)
+        val topKScores = topKIndices.map { scores[it].toDouble() }
+        val maxScore = topKScores.maxOrNull() ?: 0.0
+        val expScores = topKScores.map { kotlin.math.exp(it - maxScore) }
         val sumExp = expScores.sum()
 
         // Top-P

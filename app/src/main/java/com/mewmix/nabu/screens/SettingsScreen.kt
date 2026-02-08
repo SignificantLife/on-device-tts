@@ -53,7 +53,8 @@ fun SettingsScreen() {
     var debug by remember { mutableStateOf(SettingsManager.isDebug(context)) }
     var benchmark by remember { mutableStateOf(SettingsManager.isBenchmark(context)) }
     var runtime by remember { mutableStateOf(SettingsManager.getRuntimePreference(context)) }
-    var ttsEngine by remember { mutableStateOf(SettingsManager.getTtsEngine(context)) }
+    val storedTtsEngine = SettingsManager.getTtsEngine(context)
+    var ttsEngine by remember { mutableStateOf(storedTtsEngine) }
     var expanded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val modelManager = remember { ModelManager(context) }
@@ -70,13 +71,15 @@ fun SettingsScreen() {
     var llmTtftTimeout by remember { mutableStateOf(SettingsManager.getLlmTtftTimeoutMs(context).toString()) }
     var llmTotalTimeout by remember { mutableStateOf(SettingsManager.getLlmTotalTimeoutMs(context).toString()) }
 
-    LaunchedEffect(runtime) {
-        withContext(Dispatchers.IO) {
-            OnnxRuntimeManager.initialize(
-                context.applicationContext,
-                runtime,
-                allowDownload = SettingsManager.isKokoroAutoDownloadEnabled(context)
-            )
+    LaunchedEffect(runtime, ttsEngine) {
+        if (ttsEngine == "kokoro") {
+            withContext(Dispatchers.IO) {
+                OnnxRuntimeManager.initialize(
+                    context.applicationContext,
+                    runtime,
+                    allowDownload = SettingsManager.isKokoroAutoDownloadEnabled(context)
+                )
+            }
         }
     }
 
