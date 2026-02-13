@@ -32,7 +32,8 @@ fun playAudio(audioData: FloatArray, sampleRate: Int, scope: CoroutineScope, onC
         val shortBuffer = byteBuffer.asShortBuffer()
 
         for (sample in audioData) {
-            val pcmValue = (sample * Short.MAX_VALUE).toInt().toShort()
+            val safeSample = if (sample.isFinite()) sample.coerceIn(-1f, 1f) else 0f
+            val pcmValue = (safeSample * Short.MAX_VALUE).toInt().toShort()
             shortBuffer.put(pcmValue)
         }
 

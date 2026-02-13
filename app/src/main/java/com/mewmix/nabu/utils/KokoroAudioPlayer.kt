@@ -55,7 +55,8 @@ class KokoroAudioPlayer(
         byteBuffer.order(ByteOrder.LITTLE_ENDIAN)
         val shortBuffer = byteBuffer.asShortBuffer()
         for (s in audio) {
-            val pcmValue = (s * Short.MAX_VALUE).toInt().toShort()
+            val safeSample = if (s.isFinite()) s.coerceIn(-1f, 1f) else 0f
+            val pcmValue = (safeSample * Short.MAX_VALUE).toInt().toShort()
             shortBuffer.put(pcmValue)
         }
         pcmData = byteBuffer.array()

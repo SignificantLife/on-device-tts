@@ -14,6 +14,7 @@ import java.nio.FloatBuffer
 import java.nio.LongBuffer
 import java.util.Collections
 import java.util.PriorityQueue
+import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.random.Random
 
@@ -132,9 +133,38 @@ class SopranoEngine(
             fullAudio.addAll(audioChunk.asList())
         }
 
-        val out = AudioResult(fullAudio.toFloatArray(), SAMPLE_RATE)
+        val pcmSafe = normalizeForPcm(fullAudio.toFloatArray())
+        val out = AudioResult(pcmSafe, SAMPLE_RATE)
         DebugLogger.log("SopranoEngine.synthesize: produced ${out.wav.size} samples @ ${out.sampleRate} Hz")
         out
+    }
+
+    private fun normalizeForPcm(audio: FloatArray): FloatArray {
+        if (audio.isEmpty()) return audio
+
+        var peak = 0f
+        var hasNonFinite = false
+        for (sample in audio) {
+            if (!sample.isFinite()) {
+                hasNonFinite = true
+                continue
+            }
+            val magnitude = abs(sample)
+            if (magnitude > peak) peak = magnitude
+        }
+
+        val gain = if (peak > 1f) 0.98f / peak else 1f
+        if (!hasNonFinite && gain == 1f) return audio
+
+        if (gain < 1f) {
+            DebugLogger.log("SopranoEngine.synthesize: normalizing waveform peak=$peak gain=$gain")
+        }
+
+        return FloatArray(audio.size) { idx ->
+            val sample = audio[idx]
+            val finite = if (sample.isFinite()) sample else 0f
+            (finite * gain).coerceIn(-1f, 1f)
+        }
     }
 
     private fun preprocessText(text: String, batchSize: Int = 3, minLength: Int = 30): List<String> {

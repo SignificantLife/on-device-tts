@@ -38,7 +38,8 @@ fun saveAudio(audioData: FloatArray, context: Context, name: String, sampleRate:
     val shortBuffer = byteBuffer.asShortBuffer()
 
     for (sample in audioData) {
-        val pcmValue = (sample * Short.MAX_VALUE).toInt().toShort()
+        val safeSample = if (sample.isFinite()) sample.coerceIn(-1f, 1f) else 0f
+        val pcmValue = (safeSample * Short.MAX_VALUE).toInt().toShort()
         shortBuffer.put(pcmValue)
     }
 
@@ -85,7 +86,8 @@ fun saveAudioInternal(audioData: FloatArray, file: java.io.File, sampleRate: Int
     byteBuffer.order(ByteOrder.LITTLE_ENDIAN)
     val shortBuffer = byteBuffer.asShortBuffer()
     for (sample in audioData) {
-        val pcmValue = (sample * Short.MAX_VALUE).toInt().toShort()
+        val safeSample = if (sample.isFinite()) sample.coerceIn(-1f, 1f) else 0f
+        val pcmValue = (safeSample * Short.MAX_VALUE).toInt().toShort()
         shortBuffer.put(pcmValue)
     }
 

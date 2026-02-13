@@ -517,12 +517,15 @@ fun BasicScreen(
     var shouldSaveFile by remember { mutableStateOf(false) }
     var expanded by remember { mutableStateOf(false) }
     
-    var isSupertonic by remember { mutableStateOf(false) }
+    var isSupertonic by remember { mutableStateOf(SettingsManager.getTtsEngine(context) == "supertonic") }
+    var isSoprano by remember { mutableStateOf(SettingsManager.getTtsEngine(context) == "soprano") }
     var hasSupertonicModels by remember { mutableStateOf(false) }
+    val styleRequired = !isSoprano
 
     LaunchedEffect(Unit) {
         val preferredEngine = SettingsManager.getTtsEngine(context)
         isSupertonic = preferredEngine == "supertonic"
+        isSoprano = preferredEngine == "soprano"
         if (isSupertonic) {
             val modelManager = ModelManager(context)
             val selectedId = SettingsManager.getSupertonicModelId(context)
@@ -576,36 +579,38 @@ fun BasicScreen(
                 )
             )
 
-            ExposedDropdownMenuBox(
-                expanded = expanded,
-                onExpandedChange = { expanded = !expanded },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                TextField(
-                    value = style,
-                    onValueChange = {},
-                    label = { Text("STYLE") },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .menuAnchor(),
-                    readOnly = true,
-                    trailingIcon = {
-                        Text(if (expanded) "▲" else "▼", color = Brutal.textBright)
-                    }
-                )
-
-                DropdownMenu(
+            if (styleRequired) {
+                ExposedDropdownMenuBox(
                     expanded = expanded,
-                    onDismissRequest = { expanded = false }
+                    onExpandedChange = { expanded = !expanded },
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    names.forEach { name ->
-                        DropdownMenuItem(
-                            text = { Text(name.uppercase()) },
-                            onClick = {
-                                style = name
-                                expanded = false
-                            }
-                        )
+                    TextField(
+                        value = style,
+                        onValueChange = {},
+                        label = { Text("STYLE") },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor(),
+                        readOnly = true,
+                        trailingIcon = {
+                            Text(if (expanded) "▲" else "▼", color = Brutal.textBright)
+                        }
+                    )
+
+                    DropdownMenu(
+                        expanded = expanded,
+                        onDismissRequest = { expanded = false }
+                    ) {
+                        names.forEach { name ->
+                            DropdownMenuItem(
+                                text = { Text(name.uppercase()) },
+                                onClick = {
+                                    style = name
+                                    expanded = false
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -626,10 +631,10 @@ fun BasicScreen(
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(16.dp)
+                .padding(16.dp)
             ) {
                 val playEnabled = !isProcessing &&
-                    style.isNotEmpty() &&
+                    (!styleRequired || style.isNotEmpty()) &&
                     modelState is ModelState.Ready &&
                     (!isSupertonic || hasSupertonicModels)
 

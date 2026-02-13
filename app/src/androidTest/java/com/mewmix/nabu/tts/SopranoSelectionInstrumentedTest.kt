@@ -14,6 +14,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import kotlin.math.abs
 
 @RunWith(AndroidJUnit4::class)
 class SopranoSelectionInstrumentedTest {
@@ -47,5 +48,8 @@ class SopranoSelectionInstrumentedTest {
 
         assertTrue("Expected synthesized audio to have samples", result.wav.isNotEmpty())
         assertEquals("Expected Soprano sample rate", 32000, result.sampleRate)
+        val peak = result.wav.maxOf { abs(it) }
+        assertTrue("Expected finite waveform peak, got $peak", peak.isFinite())
+        assertTrue("Expected waveform peak <= 1.0, got $peak", peak <= 1.0f)
     }
 }
