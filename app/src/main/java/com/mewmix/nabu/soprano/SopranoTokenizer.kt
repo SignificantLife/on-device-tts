@@ -18,11 +18,22 @@ class SopranoTokenizer(private val modelDir: File) {
 
         val json = gson.fromJson(tokenizerFile.readText(), TokenizerJson::class.java)
         vocab = json.model.vocab
-        // Merges in JSON are usually "a b", we split them into pairs
-        merges = json.model.merges.map {
-            val parts = it.split(" ")
-            if (parts.size != 2) throw IllegalStateException("Invalid merge: $it")
-            parts[0] to parts[1]
+        // Merges can be either "a b" strings or ["a","b"] arrays depending on tokenizer export.
+        merges = json.model.merges.map { merge ->
+            when (merge) {
+                is String -> {
+                    val parts = merge.split(" ")
+                    if (parts.size != 2) throw IllegalStateException("Invalid merge: $merge")
+                    parts[0] to parts[1]
+                }
+                is List<*> -> {
+                    if (merge.size != 2 || merge[0] !is String || merge[1] !is String) {
+                        throw IllegalStateException("Invalid merge list: $merge")
+                    }
+                    (merge[0] as String) to (merge[1] as String)
+                }
+                else -> throw IllegalStateException("Unsupported merge token type: ${merge?.javaClass?.name}")
+            }
         }
 
         // Identify special tokens. Usually defined in added_tokens or just vocab with specific format.
@@ -128,6 +139,6 @@ class SopranoTokenizer(private val modelDir: File) {
 
     private data class Model(
         val vocab: Map<String, Int>,
-        val merges: List<String>
+        val merges: List<Any>
     )
 }

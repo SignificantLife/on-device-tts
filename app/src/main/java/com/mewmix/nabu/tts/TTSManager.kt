@@ -2,14 +2,11 @@ package com.mewmix.nabu.tts
 
 import android.content.Context
 import com.mewmix.nabu.data.ModelType
-import com.mewmix.nabu.data.UserPreferencesRepository
 import com.mewmix.nabu.kokoro.KokoroEngine
 import com.mewmix.nabu.supertonic.DebugSupertonicEngine
 import com.mewmix.nabu.soprano.SopranoEngine
-import com.mewmix.nabu.supertonic.SupertonicStyle
 import com.mewmix.nabu.utils.DebugLogger
 import com.mewmix.nabu.utils.OnnxRuntimeManager
-import kotlinx.coroutines.flow.first
 import java.io.File
 import com.mewmix.nabu.data.ModelManager
 import ai.onnxruntime.OrtEnvironment
@@ -17,73 +14,99 @@ import com.mewmix.nabu.utils.SettingsManager
 import com.mewmix.nabu.kokoro.RunEp
 
 object TTSManager {
+    private enum class EngineKind {
+        KOKORO,
+        SUPERTONIC,
+        SOPRANO
+    }
+
     private var activeEngine: TTSEngine? = null
+    private var activeEngineKind: EngineKind? = null
     private var activeRuntimePreference: RunEp? = null
     private var activeSupertonicModelId: String? = null
     private var activeSopranoModelId: String? = null
-    // Wait, ModelType.LLM is confusing here. I should use a specific TTS type enum or just check.
-    // Let's use string id or a separate enum.
+
+    private const val SOPRANO_MODEL_ID = "soprano-80m-onnx"
+
+    private fun unwrapEngine(engine: TTSEngine?): TTSEngine? =
+        if (engine is BenchmarkingTTSEngine) engine.delegate else engine
+
+    private fun resolveEngineKind(engine: TTSEngine?): EngineKind? {
+        val raw = unwrapEngine(engine) ?: return null
+        return when (raw) {
+            is KokoroEngine -> EngineKind.KOKORO
+            is DebugSupertonicEngine -> EngineKind.SUPERTONIC
+            is SopranoEngine -> EngineKind.SOPRANO
+            else -> when (raw.name.lowercase()) {
+                "kokoro" -> EngineKind.KOKORO
+                "supertonic" -> EngineKind.SUPERTONIC
+                "soprano" -> EngineKind.SOPRANO
+                else -> null
+            }
+        }
+    }
+
+    private fun clearActiveEngineState(closeExisting: Boolean = true) {
+        if (closeExisting) {
+            activeEngine?.close()
+        }
+        activeEngine = null
+        activeEngineKind = null
+        activeRuntimePreference = null
+        activeSupertonicModelId = null
+        activeSopranoModelId = null
+    }
 
     suspend fun getEngine(context: Context, modelManager: ModelManager): TTSEngine? {
         DebugLogger.log("TTSManager.getEngine: enter")
-        val preferredEngineRaw = SettingsManager.getTtsEngine(context)
-        val preferredEngine = preferredEngineRaw
+        val preferredEngine = SettingsManager.getTtsEngine(context)
         val preferredRuntime = SettingsManager.getRuntimePreference(context)
         val preferredSupertonicModel = SettingsManager.getSupertonicModelId(context)
 
-        DebugLogger.log("Prefs engine=%s runtime=%s supertonicModel=%s active=%s".format(preferredEngine, preferredRuntime, preferredSupertonicModel, activeEngine?.name))
+        val inferredActiveKind = activeEngineKind ?: resolveEngineKind(activeEngine).also { activeEngineKind = it }
+        DebugLogger.log(
+            "Prefs engine=%s runtime=%s supertonicModel=%s active=%s activeKind=%s".format(
+                preferredEngine,
+                preferredRuntime,
+                preferredSupertonicModel,
+                activeEngine?.name,
+                inferredActiveKind
+            )
+        )
 
         if (activeEngine != null) {
-            // Check if active engine matches preference.
-            // This is a bit tricky since we don't store the type on the engine instance easily.
-            // For now, if preference changed, we might need to close and reload.
-            // But getEngine is usually called per synthesis or session.
-            // Let's assume for now if it's initialized we re-use it, unless we force reload.
-            // Actually, if the user switches engine, we should probably close the old one.
-            // But getEngine doesn't know if preference JUST changed.
-            // Let's rely on the caller or just check type if possible.
-            val isSupertonic = activeEngine?.name == "Supertonic"
-
-            if (preferredEngine == "supertonic" && !isSupertonic) {
-                activeEngine?.close()
-                activeEngine = null
-                activeRuntimePreference = null
-                activeSupertonicModelId = null
-            } else if (preferredEngine == "kokoro" && (isSupertonic)) {
-                activeEngine?.close()
-                activeEngine = null
-                activeRuntimePreference = null
-                activeSupertonicModelId = null
-                activeSopranoModelId = null
-            } else if (preferredEngine == "supertonic" &&
-                preferredSupertonicModel != null &&
-                activeSupertonicModelId != preferredSupertonicModel
-            ) {
-                activeEngine?.close()
-                activeEngine = null
-                activeRuntimePreference = null
-                activeSupertonicModelId = null
-                activeSopranoModelId = null
-            } else if (preferredEngine == "kokoro" && activeRuntimePreference != preferredRuntime) {
-                activeEngine?.close()
-                activeEngine = null
-                activeRuntimePreference = null
-                activeSopranoModelId = null
-            } else if (preferredEngine == "soprano" && activeSopranoModelId != "soprano-80m-onnx") {
-                // If switching to Soprano or model changed, reset
-                activeEngine?.close()
-                activeEngine = null
-                activeRuntimePreference = null
-                activeSupertonicModelId = null
-                activeSopranoModelId = null
-            } else {
-                DebugLogger.log("Reusing active engine: %s".format(activeEngine?.name)); return activeEngine
+            val canReuse = when (preferredEngine) {
+                "kokoro" -> inferredActiveKind == EngineKind.KOKORO &&
+                    activeRuntimePreference == preferredRuntime
+                "supertonic" -> inferredActiveKind == EngineKind.SUPERTONIC &&
+                    (preferredSupertonicModel == null || activeSupertonicModelId == preferredSupertonicModel)
+                "soprano" -> inferredActiveKind == EngineKind.SOPRANO &&
+                    activeSopranoModelId == SOPRANO_MODEL_ID
+                else -> false
             }
+
+            if (canReuse) {
+                DebugLogger.log("Reusing active engine: %s (%s)".format(activeEngine?.name, inferredActiveKind))
+                return activeEngine
+            }
+
+            DebugLogger.log(
+                "Discarding active engine due to preference mismatch. preferred=%s activeKind=%s runtime=%s activeRuntime=%s supertonicModel=%s activeSupertonic=%s sopranoModel=%s".format(
+                    preferredEngine,
+                    inferredActiveKind,
+                    preferredRuntime,
+                    activeRuntimePreference,
+                    preferredSupertonicModel,
+                    activeSupertonicModelId,
+                    activeSopranoModelId
+                )
+            )
+            clearActiveEngineState()
         }
 
         if (preferredEngine == "soprano") {
             DebugLogger.log("TTSManager: Preference=Soprano. Verifying local model files...")
-            val modelId = "soprano-80m-onnx"
+            val modelId = SOPRANO_MODEL_ID
             val modelDir = File(context.filesDir, "models/$modelId")
             val required = listOf(
                 "soprano_backbone_kv.onnx",
@@ -98,6 +121,7 @@ object TTSManager {
                     DebugLogger.log("TTSManager: Loading Soprano from ${modelDir.absolutePath}")
                     val engine = SopranoEngine(modelDir, OrtEnvironment.getEnvironment())
                     activeEngine = BenchmarkingTTSEngine(engine)
+                    activeEngineKind = EngineKind.SOPRANO
                     activeRuntimePreference = RunEp.CPU
                     activeSupertonicModelId = null
                     activeSopranoModelId = modelId
@@ -130,8 +154,10 @@ object TTSManager {
                 try {
                     val engine = DebugSupertonicEngine(modelDir)
                     activeEngine = BenchmarkingTTSEngine(engine)
+                    activeEngineKind = EngineKind.SUPERTONIC
                     activeRuntimePreference = null
                     activeSupertonicModelId = model.id
+                    activeSopranoModelId = null
                     DebugLogger.log("TTSManager: Switched to Supertonic (${model.name})")
                     return activeEngine
                 } catch (e: Exception) {
@@ -158,7 +184,10 @@ object TTSManager {
             val bundle = OnnxRuntimeManager.initialize(context).getOrNull()
             if (bundle != null) {
                  activeEngine = BenchmarkingTTSEngine(OnnxRuntimeManager.getEngine())
+                 activeEngineKind = EngineKind.KOKORO
                  activeRuntimePreference = preferredRuntime
+                 activeSupertonicModelId = null
+                 activeSopranoModelId = null
                  DebugLogger.log("TTSManager: Switched to Kokoro (fallback or default)")
                  return activeEngine
             }
@@ -170,7 +199,6 @@ object TTSManager {
     }
 
     fun close() {
-        activeEngine?.close()
-        activeEngine = null
+        clearActiveEngineState()
     }
 }

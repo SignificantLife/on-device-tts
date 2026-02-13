@@ -41,10 +41,10 @@ class GlobalRuntimeViewModel(application: Application) : AndroidViewModel(applic
             val context = getApplication<Application>()
             _modelState.value = ModelState.Loading
             
-            val isSupertonic = SettingsManager.getTtsEngine(context) == "supertonic"
-            
-            if (isSupertonic) {
-                // Supertonic logic
+            val ttsEngine = SettingsManager.getTtsEngine(context)
+
+            if (ttsEngine == "supertonic" || ttsEngine == "soprano") {
+                // Supertonic/Soprano use their own runtime and do not require Kokoro init.
                 _modelState.value = ModelState.Ready
             } else {
                 // Kokoro logic

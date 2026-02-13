@@ -18,10 +18,10 @@ import java.io.File
 
 fun saveAudio(audioData: FloatArray, context: Context, name: String, sampleRate: Int): Uri? {
     val safeName = name.replace(Regex("""[^a-zA-Z0-9_\-]"""), "_")
-    val enginePrefix = if (SettingsManager.getTtsEngine(context) == "supertonic") {
-        "SUPERTONIC"
-    } else {
-        "KOKORO"
+    val enginePrefix = when (SettingsManager.getTtsEngine(context)) {
+        "supertonic" -> "SUPERTONIC"
+        "soprano" -> "SOPRANO"
+        else -> "KOKORO"
     }
     val timeStamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.getDefault()).format(Date())
 

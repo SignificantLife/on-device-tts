@@ -31,6 +31,8 @@ fun RuntimeStatusLine(
             append("SUPERTONIC / CPU")
             supertonicModelLabel?.let { append(" / $it") }
         }
+    } else if (ttsEngine == "soprano") {
+        "SOPRANO / CPU / soprano-80m-onnx"
     } else {
         if (runtimeStatus == null) {
             "KOKORO / LOADING..."
