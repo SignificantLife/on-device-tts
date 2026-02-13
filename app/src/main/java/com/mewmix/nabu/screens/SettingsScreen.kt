@@ -52,13 +52,15 @@ fun SettingsScreen() {
     val versionName = remember { getAppVersion(context) }
     var debug by remember { mutableStateOf(SettingsManager.isDebug(context)) }
     var benchmark by remember { mutableStateOf(SettingsManager.isBenchmark(context)) }
+    var methodTracing by remember { mutableStateOf(SettingsManager.isMethodTracingEnabled(context)) }
     var runtime by remember { mutableStateOf(SettingsManager.getRuntimePreference(context)) }
     val storedTtsEngine = SettingsManager.getTtsEngine(context)
     var ttsEngine by remember { mutableStateOf(storedTtsEngine) }
     var expanded by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val modelManager = remember { ModelManager(context) }
-    val ttsModels = modelManager.models.filter { it.type == ModelType.TTS }
+    // Only Supertonic models should appear in Supertonic selector
+    val supertonicModels = modelManager.models.filter { it.type == ModelType.TTS && it.id.startsWith("supertonic") }
     val ttsEngineOptions = listOf("kokoro", "supertonic", "soprano")
     var supertonicExpanded by remember { mutableStateOf(false) }
     var supertonicModelId by remember { mutableStateOf(SettingsManager.getSupertonicModelId(context)) }
@@ -107,6 +109,32 @@ fun SettingsScreen() {
                 },
                 label = "Benchmark Mode"
             )
+
+            SwitchToggle(
+                checked = methodTracing,
+                onToggle = { enabled ->
+                    methodTracing = enabled
+                    SettingsManager.setMethodTracingEnabled(context, enabled)
+                    if (enabled) {
+                        com.mewmix.nabu.utils.MethodTraceManager.start(context)
+                    } else {
+                        com.mewmix.nabu.utils.MethodTraceManager.stop()
+                    }
+                },
+                label = "Method Tracing"
+            )
+
+            // Trace status line
+            run {
+                val running = com.mewmix.nabu.utils.MethodTraceManager.isRunning()
+                val path = com.mewmix.nabu.utils.MethodTraceManager.tracePath(context) ?: "unavailable"
+                val status = if (running) "Running" else "Off"
+                Text(
+                    text = "Tracing: $status — $path",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
 
             HorizontalDivider()
 
@@ -165,6 +193,7 @@ fun SettingsScreen() {
                             onClick = {
                                 ttsEngine = option
                                 SettingsManager.setTtsEngine(context, option)
+                                com.mewmix.nabu.utils.DebugLogger.log("Settings: TTS Engine set to $option")
                                 ttsEngineExpanded = false
                             }
                         )
@@ -172,13 +201,13 @@ fun SettingsScreen() {
                 }
             }
 
-            if (ttsEngine == "supertonic" && ttsModels.isNotEmpty()) {
+            if (ttsEngine == "supertonic" && supertonicModels.isNotEmpty()) {
                 ExposedDropdownMenuBox(
                     expanded = supertonicExpanded,
                     onExpandedChange = { supertonicExpanded = it }
                 ) {
                     TextField(
-                        value = ttsModels.firstOrNull { it.id == supertonicModelId }?.name ?: "Select Supertonic model",
+                        value = supertonicModels.firstOrNull { it.id == supertonicModelId }?.name ?: "Select Supertonic model",
                         onValueChange = {},
                         readOnly = true,
                         label = { Text("Supertonic Model") },
@@ -189,7 +218,7 @@ fun SettingsScreen() {
                         expanded = supertonicExpanded,
                         onDismissRequest = { supertonicExpanded = false }
                     ) {
-                        ttsModels.forEach { model ->
+                        supertonicModels.forEach { model ->
                             val label = if (model.isDownloaded) {
                                 model.name
                             } else {

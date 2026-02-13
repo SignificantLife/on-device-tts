@@ -32,6 +32,8 @@ class SopranoTokenizer(private val modelDir: File) {
         sortedSpecialTokens = specialTokens.keys.sortedByDescending { it.length }
     }
 
+    fun idFor(token: String): Int? = specialTokens[token]
+
     fun encode(text: String): LongArray {
         val ids = mutableListOf<Long>()
 

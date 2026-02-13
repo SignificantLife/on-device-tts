@@ -25,14 +25,19 @@ class SopranoEngine(
     private val backboneSession: OrtSession
     private val decoderSession: OrtSession
     private val tokenizer: SopranoTokenizer
+    private var kvKeyNames: List<String> = emptyList()
+    private var kvValNames: List<String> = emptyList()
 
     // Constants
     private val SAMPLE_RATE = 32000
     private val RECEPTIVE_FIELD = 4
     private val TOKEN_SIZE = 2048
-    private val HIDDEN_DIM = 128
-    private val NUM_LAYERS = 17
-    private val VOCAB_SIZE = 8192
+    // These are discovered from model IO at runtime
+    private var kvDimHead: Long = 128
+    private var kvNumHeads: Long = 1
+    private var numLayers: Int = 17
+    private var vocabSize: Int = 8192
+    private var stopTokenId: Long = 3L
     private val MAX_NEW_TOKENS = 512
     private val TARGET_CHUNK_SIZE = 8
 
@@ -53,6 +58,58 @@ class SopranoEngine(
         tokenizer = SopranoTokenizer(modelDir)
 
         Log.i("SopranoEngine", "Initialized Soprano Engine from $modelDir")
+        DebugLogger.log("SopranoEngine: init starting sessions at ${modelDir.absolutePath}")
+        try {
+            val inNames = backboneSession.inputNames.joinToString()
+            val outNames = backboneSession.outputNames.joinToString()
+            val decIn = decoderSession.inputNames.joinToString()
+            val decOut = decoderSession.outputNames.joinToString()
+            DebugLogger.log("SopranoEngine: backbone inputs=[$inNames] outputs=[$outNames]")
+            DebugLogger.log("SopranoEngine: decoder inputs=[$decIn] outputs=[$decOut]")
+            // Discover KV cache dims and layer count from backbone input info
+            runCatching {
+                // Discover KV input names and shapes from model inputs
+                val inputs = backboneSession.inputNames
+                val kvGroups = inputs.mapNotNull { name ->
+                    val m = Regex("(.+)\\.(key|value)$").find(name)
+                    if (m != null && name.contains("past") ) {
+                        val prefix = m.groupValues[1]
+                        val kind = m.groupValues[2]
+                        Triple(prefix, kind, name)
+                    } else null
+                }.groupBy({ it.first }, { it })
+
+                if (kvGroups.isNotEmpty()) {
+                    val keys = mutableListOf<String>()
+                    val vals = mutableListOf<String>()
+                    kvGroups.toSortedMap().forEach { (_, triples) ->
+                        val keyName = triples.firstOrNull { it.second == "key" }?.third
+                        val valName = triples.firstOrNull { it.second == "value" }?.third
+                        if (keyName != null && valName != null) {
+                            keys.add(keyName)
+                            vals.add(valName)
+                        }
+                    }
+                    if (keys.isNotEmpty() && vals.size == keys.size) {
+                        kvKeyNames = keys
+                        kvValNames = vals
+                        numLayers = keys.size
+                        // Inspect shape from the first key input
+                        val tInfo = backboneSession.inputInfo[keys.first()]?.info as? ai.onnxruntime.TensorInfo
+                        val shape = tInfo?.shape
+                        if (shape != null && shape.size >= 4) {
+                            kvNumHeads = if (shape[1] > 0) shape[1] else kvNumHeads
+                            kvDimHead = if (shape[3] > 0) shape[3] else kvDimHead
+                        }
+                    }
+                }
+            }.onFailure { e -> DebugLogger.log("SopranoEngine: KV discovery failed: ${e.message}") }
+            // Discover STOP token id if available
+            tokenizer.idFor("[STOP]")?.let { stopTokenId = it.toLong() }
+            DebugLogger.log("SopranoEngine: layers=$numLayers heads=$kvNumHeads headDim=$kvDimHead stopId=$stopTokenId")
+        } catch (_: Exception) {
+            // best-effort logging only
+        }
     }
 
     override val sampleRate: Int = SAMPLE_RATE
@@ -60,6 +117,7 @@ class SopranoEngine(
     override val provider: String = "ONNX/CPU"
 
     override suspend fun synthesize(text: String, speed: Float): AudioResult = withContext(Dispatchers.Default) {
+        DebugLogger.log("SopranoEngine.synthesize: textLen=${text.length} speed=$speed")
         // 1. Normalize
         val normalized = SopranoTextNormalizer.cleanText(text)
 
@@ -74,7 +132,9 @@ class SopranoEngine(
             fullAudio.addAll(audioChunk.asList())
         }
 
-        AudioResult(fullAudio.toFloatArray(), SAMPLE_RATE)
+        val out = AudioResult(fullAudio.toFloatArray(), SAMPLE_RATE)
+        DebugLogger.log("SopranoEngine.synthesize: produced ${out.wav.size} samples @ ${out.sampleRate} Hz")
+        out
     }
 
     private fun preprocessText(text: String, batchSize: Int = 3, minLength: Int = 30): List<String> {
@@ -108,7 +168,8 @@ class SopranoEngine(
         val prompts = mutableListOf<String>()
         for (i in sentences.indices step batchSize) {
             val batch = sentences.subList(i, minOf(i + batchSize, sentences.size)).joinToString(" ")
-            prompts.add("[STOP][TEXT]$batch[START]")
+            // Do not prefix with [STOP]; begin with [TEXT] and [START]
+            prompts.add("[TEXT]$batch[START]")
         }
 
         return prompts
@@ -121,17 +182,21 @@ class SopranoEngine(
         // --- KV Cache Management ---
         // Map: "past_key_values.0.key" -> OnnxTensor
         val kvCache = mutableMapOf<String, OnnxTensor>()
-        for (i in 0 until NUM_LAYERS) {
-            // Initial empty tensor: [1, 1, 0, 128]
-            val emptyFloat = FloatBuffer.allocate(0)
-            val tensor = OnnxTensor.createTensor(env, emptyFloat, longArrayOf(1, 1, 0, HIDDEN_DIM.toLong()))
-            kvCache["past_key_values.$i.key"] = tensor
-            kvCache["past_key_values.$i.value"] = tensor // Reuse same empty object for initial map? better copy.
-            // Actually reusing same Java wrapper for empty is fine, ORT might complain if closed twice?
-            // Safer to create new wrapper. But buffer is 0.
-            // Let's create distinct wrappers just in case.
-             val tensorV = OnnxTensor.createTensor(env, FloatBuffer.allocate(0), longArrayOf(1, 1, 0, HIDDEN_DIM.toLong()))
-             kvCache["past_key_values.$i.value"] = tensorV
+        // Use discovered kv input names when available; otherwise fall back to numbered names
+        if (kvKeyNames.isNotEmpty() && kvValNames.size == kvKeyNames.size) {
+            for (i in kvKeyNames.indices) {
+                val keyEmpty = OnnxTensor.createTensor(env, FloatBuffer.allocate(0), longArrayOf(1, kvNumHeads, 0, kvDimHead))
+                val valEmpty = OnnxTensor.createTensor(env, FloatBuffer.allocate(0), longArrayOf(1, kvNumHeads, 0, kvDimHead))
+                kvCache[kvKeyNames[i]] = keyEmpty
+                kvCache[kvValNames[i]] = valEmpty
+            }
+        } else {
+            for (i in 0 until numLayers) {
+                val keyEmpty = OnnxTensor.createTensor(env, FloatBuffer.allocate(0), longArrayOf(1, kvNumHeads, 0, kvDimHead))
+                val valEmpty = OnnxTensor.createTensor(env, FloatBuffer.allocate(0), longArrayOf(1, kvNumHeads, 0, kvDimHead))
+                kvCache["past_key_values.$i.key"] = keyEmpty
+                kvCache["past_key_values.$i.value"] = valEmpty
+            }
         }
 
         // --- State Variables ---
@@ -148,8 +213,8 @@ class SopranoEngine(
         var chunkCounter = TARGET_CHUNK_SIZE
         var firstChunk = true
 
-        val seenTokenMask = BooleanArray(VOCAB_SIZE)
-        inputIds.forEach { if(it in 0 until VOCAB_SIZE) seenTokenMask[it.toInt()] = true }
+        var seenTokenMask = BooleanArray(vocabSize)
+        inputIds.forEach { if (it in 0 until vocabSize) seenTokenMask[it.toInt()] = true }
 
         var activeResult: OrtSession.Result? = null
 
@@ -180,12 +245,26 @@ class SopranoEngine(
                 // Logits is index 0, last hidden state is last output; KVs are in between.
                 val logitsTensor = outputs[0] as OnnxTensor
                 val lastHiddenStateTensor = outputs[outputs.size() - 1] as OnnxTensor
+                // Update vocab size and seen mask if this is the first step
+                if (step == 0) {
+                    val shape = logitsTensor.info.shape
+                    if (shape.size >= 3) {
+                        val vsz = shape[2].toInt()
+                        if (vsz != vocabSize) {
+                            vocabSize = vsz
+                            val newMask = BooleanArray(vocabSize)
+                            // rebuild from input ids
+                            inputIds.forEach { if (it in 0 until vocabSize) newMask[it.toInt()] = true }
+                            seenTokenMask = newMask
+                            DebugLogger.log("SopranoEngine: vocabSize=$vocabSize")
+                        }
+                    }
+                }
 
                 // Correct Loop for KV Extraction
-                for (i in 0 until NUM_LAYERS) {
-                    val kName = "past_key_values.$i.key"
-                    val vName = "past_key_values.$i.value"
-                    // Find by name in outputs
+                for (i in 0 until numLayers) {
+                    val kName = if (kvKeyNames.isNotEmpty()) kvKeyNames[i] else "past_key_values.$i.key"
+                    val vName = if (kvValNames.isNotEmpty()) kvValNames[i] else "past_key_values.$i.value"
                     val kTensor = outputs.get(1 + i * 2) as OnnxTensor // Assuming order
                     val vTensor = outputs.get(2 + i * 2) as OnnxTensor
                     kvCache[kName] = kTensor
@@ -194,7 +273,7 @@ class SopranoEngine(
 
                 // 2. Sample Next Token
                 val nextToken = sample(logitsTensor, seenTokenMask)
-                if (nextToken == 3L) { // [STOP]
+                if (nextToken == stopTokenId) { // [STOP]
                     break
                 }
                 seenTokenMask[nextToken.toInt()] = true
@@ -431,7 +510,12 @@ class SopranoEngine(
     }
 
     override fun close() {
-        backboneSession.close()
-        decoderSession.close()
+        try {
+            decoderSession.close()
+        } catch (_: Exception) {}
+        try {
+            backboneSession.close()
+        } catch (_: Exception) {}
+        // OrtEnvironment is a singleton; do not close here.
     }
 }

@@ -112,7 +112,7 @@ fun InitScreen(
                     expanded = engineExpanded,
                     onDismissRequest = { engineExpanded = false }
                 ) {
-                    listOf("kokoro", "supertonic").forEach { option ->
+                    listOf("kokoro", "supertonic", "soprano").forEach { option ->
                         DropdownMenuItem(
                             text = { Text(option.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }) },
                             onClick = {
@@ -255,18 +255,18 @@ fun InitScreen(
                                 color = Brutal.textBright
                             )
                         } else {
-                            val supertonicLabel = if (model.isDownloaded) "Downloaded" else "Download"
+                            val label = if (model.isDownloaded) "Downloaded" else "Download"
                             BrutalButton(
                                 onClick = {
                                     if (!model.isDownloaded) {
-                                        DebugLogger.log("InitScreen: Starting Supertonic download for ${model.name}")
+                                        DebugLogger.log("InitScreen: Starting TTS model download for ${model.name}")
                                         downloadTargetId = model.id
                                         modelDownloader.downloadModel(model)
                                     }
                                 },
                                 enabled = !model.isDownloaded && !isDownloading
                             ) {
-                                BrutalButtonText(supertonicLabel)
+                                BrutalButtonText(label)
                             }
                         }
                     }

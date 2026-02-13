@@ -109,6 +109,22 @@ class MyApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         DynamicColors.applyToActivitiesIfAvailable(this)
+        // Ensure early initialization of file logger and optional method tracing
+        com.mewmix.nabu.utils.DebugLogger.initialize(this)
+
+        // Global uncaught exception handler to capture stack traces in our log
+        Thread.setDefaultUncaughtExceptionHandler { t, e ->
+            try {
+                com.mewmix.nabu.utils.DebugLogger.logErr("Uncaught exception in thread ${t.name}", e)
+            } catch (_: Throwable) {
+                // No-op; avoid recursive crashes
+            }
+        }
+
+        // Optionally start method tracing based on persisted setting
+        if (com.mewmix.nabu.utils.SettingsManager.isMethodTracingEnabled(this)) {
+            com.mewmix.nabu.utils.MethodTraceManager.start(this)
+        }
     }
 }
 
@@ -121,7 +137,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
-        DebugLogger.initialize(this)
+        // Logger initialized in Application
         enableEdgeToEdge()
         userPreferencesRepository = UserPreferencesRepository(this)
 
@@ -180,6 +196,8 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         super.onDestroy()
         scope.cancel()
+        // Stop method tracing if running
+        com.mewmix.nabu.utils.MethodTraceManager.stop()
     }
 
     private fun handleStartIntent(intent: Intent?): Screen {
@@ -206,6 +224,7 @@ private fun generateAudio(
 ) {
     val modelManager = com.mewmix.nabu.data.ModelManager(context)
     scope.launch(Dispatchers.IO) {
+        com.mewmix.nabu.utils.DebugLogger.log("Main.generateAudio: requesting engine")
         val engine = com.mewmix.nabu.tts.TTSManager.getEngine(context, modelManager)
         if (engine == null) {
              withContext(Dispatchers.Main) {
@@ -225,6 +244,7 @@ private fun generateAudio(
             }
 
             val rawEngine = if (engine is com.mewmix.nabu.tts.BenchmarkingTTSEngine) engine.delegate else engine
+            com.mewmix.nabu.utils.DebugLogger.log("Main.generateAudio: using engine='${rawEngine.name}' provider='${rawEngine.provider}'")
 
             val (audioData, sampleRate) = if (rawEngine is com.mewmix.nabu.kokoro.KokoroEngine) {
                 PerfHud.record("TTS synth") {

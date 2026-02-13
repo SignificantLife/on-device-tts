@@ -147,7 +147,7 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
                 BrutalButton(
                     onClick = {
                         selectedModel?.let {
-                            DebugLogger.log("ModelsScreen: Starting Supertonic download for ${it.name}")
+                            DebugLogger.log("ModelsScreen: Starting TTS model download for ${it.name}")
                             modelDownloader.downloadModel(it)
                         }
                         showDialog = false
@@ -289,7 +289,7 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
                                             showDialog = true
                                             DebugLogger.log("ModelsScreen: Prompting token for ${model.name}")
                                         } else {
-                                            DebugLogger.log("ModelsScreen: Starting Supertonic download for ${model.name}")
+                                            DebugLogger.log("ModelsScreen: Starting TTS model download for ${model.name}")
                                             modelDownloader.downloadModel(model)
                                         }
                                     }) {

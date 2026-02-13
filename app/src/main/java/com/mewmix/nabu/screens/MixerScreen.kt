@@ -88,7 +88,7 @@ fun MixerScreen(
             }
             val selectedModel = selectedId?.let { id -> downloadedModels.firstOrNull { it.id == id } }
             hasSupertonicModels = if (selectedId != null) selectedModel != null else downloadedModels.isNotEmpty()
-        } else {
+        } else if (preferredEngine == "kokoro") {
             val result = withContext(Dispatchers.IO) {
                 OnnxRuntimeManager.initialize(
                     context.applicationContext,
@@ -160,22 +160,24 @@ fun MixerScreen(
             Text("%.2f".format(speed))
         }
 
-        StyleSelector(
-            styleNames = styleLoader.names,
-            selectedStyles = selectedStyles,
-            onAddStyle = {
-                selectedStyles = selectedStyles + it
-                weights = weights + (it to 1f)
-                saveStyleConfig(context, selectedStyles, weights, interpolationMode)
-            },
-            onRemoveStyle = {
-                selectedStyles = selectedStyles - it
-                weights = weights - it
-                saveStyleConfig(context, selectedStyles, weights, interpolationMode)
-            }
-        )
+        if (SettingsManager.getTtsEngine(context) == "kokoro") {
+            StyleSelector(
+                styleNames = styleLoader.names,
+                selectedStyles = selectedStyles,
+                onAddStyle = {
+                    selectedStyles = selectedStyles + it
+                    weights = weights + (it to 1f)
+                    saveStyleConfig(context, selectedStyles, weights, interpolationMode)
+                },
+                onRemoveStyle = {
+                    selectedStyles = selectedStyles - it
+                    weights = weights - it
+                    saveStyleConfig(context, selectedStyles, weights, interpolationMode)
+                }
+            )
+        }
 
-        if (SettingsManager.getTtsEngine(context) != "supertonic") {
+        if (SettingsManager.getTtsEngine(context) == "kokoro") {
             WeightSliders(
                 selectedStyles = selectedStyles,
                 weights = weights,
@@ -194,8 +196,7 @@ fun MixerScreen(
             )
         }
 
-        val ttsEngine = remember { SettingsManager.getTtsEngine(context) }
-        val isSupertonic = ttsEngine == "supertonic"
+        // Use top-level isSupertonic computed in LaunchedEffect
 
         Row(modifier = Modifier.fillMaxWidth()) {
             BrutalButton(
@@ -203,7 +204,14 @@ fun MixerScreen(
                     shouldSaveFile = false
                     isProcessing = true
                     scope.launch {
-                        val mixed = if (isSupertonic) emptyArray<FloatArray>() else mixStyles(styleLoader, selectedStyles, weights, interpolationMode)
+                        // Decide style mixing based on actual engine resolved at runtime
+                        val engine = com.mewmix.nabu.tts.TTSManager.getEngine(context, modelManager)
+                        val rawEngine = if (engine is com.mewmix.nabu.tts.BenchmarkingTTSEngine) engine.delegate else engine
+                        val mixed = if (rawEngine is com.mewmix.nabu.kokoro.KokoroEngine) {
+                            mixStyles(styleLoader, selectedStyles, weights, interpolationMode)
+                        } else {
+                            emptyArray()
+                        }
                         generateAudio(
                             text,
                             mixed,
@@ -228,7 +236,14 @@ fun MixerScreen(
                     shouldSaveFile = true
                     isProcessing = true
                     scope.launch {
-                        val mixed = if (isSupertonic) emptyArray<FloatArray>() else mixStyles(styleLoader, selectedStyles, weights, interpolationMode)
+                        // Decide style mixing based on actual engine resolved at runtime
+                        val engine = com.mewmix.nabu.tts.TTSManager.getEngine(context, modelManager)
+                        val rawEngine = if (engine is com.mewmix.nabu.tts.BenchmarkingTTSEngine) engine.delegate else engine
+                        val mixed = if (rawEngine is com.mewmix.nabu.kokoro.KokoroEngine) {
+                            mixStyles(styleLoader, selectedStyles, weights, interpolationMode)
+                        } else {
+                            emptyArray()
+                        }
                         val fileName = if (isSupertonic) {
                              val modelId = SettingsManager.getSupertonicModelId(context)
                              val modelName = modelManager.models.find { it.id == modelId }?.name ?: "supertonic"

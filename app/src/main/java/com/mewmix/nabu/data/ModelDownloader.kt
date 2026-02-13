@@ -37,25 +37,18 @@ class ModelDownloader(
 
         val targetDir = File(modelDir, model.id)
         val tempDir = File(modelDir, "${model.id}_partial")
-
-        if (targetDir.exists()) {
-             model.isDownloaded = true
-             model.hasPartial = false
-             DebugLogger.log("ModelDownloader: ${model.name} already downloaded")
-             return
-        }
-
-        if (!tempDir.exists()) tempDir.mkdirs()
-        model.hasPartial = true
+        // We'll decide destination dir after computing required files, so we can heal missing files
 
         val filesToDownload: List<String>
         val baseUrl: String
 
         if (model.id == "soprano-80m-onnx") {
             baseUrl = model.downloadUrl
+            // Soprano decoder uses external data file; download both .onnx and .onnx.data
             filesToDownload = listOf(
                 "onnx/soprano_backbone_kv.onnx",
                 "onnx/soprano_decoder.onnx",
+                "onnx/soprano_decoder.onnx.data",
                 "tokenizer.json"
             )
         } else {
@@ -88,6 +81,79 @@ class ModelDownloader(
 
             filesToDownload = onnxFiles.map { "onnx/$it" } + voiceStyles.map { "voice_styles/$it" }
         }
+
+        // Determine destination: if target exists and all required files are present, we're done.
+        // If target exists but required files are missing (e.g., new files added in update), download only missing into target.
+        if (targetDir.exists()) {
+            if (model.id == "soprano-80m-onnx") {
+                val requiredLocal = listOf(
+                    "soprano_backbone_kv.onnx",
+                    "soprano_decoder.onnx",
+                    "soprano_decoder.onnx.data",
+                    "tokenizer.json"
+                )
+                val missing = requiredLocal.filter { !File(targetDir, it).exists() }
+                if (missing.isEmpty()) {
+                    model.isDownloaded = true
+                    model.hasPartial = false
+                    DebugLogger.log("ModelDownloader: ${model.name} already downloaded")
+                    return
+                } else {
+                    DebugLogger.log("ModelDownloader: Healing ${model.name}; missing files: ${missing.joinToString()}")
+                    model.hasPartial = true
+                    // Redefine filesToDownload to only missing
+                    val mapLocalToRemote = mapOf(
+                        "soprano_backbone_kv.onnx" to "onnx/soprano_backbone_kv.onnx",
+                        "soprano_decoder.onnx" to "onnx/soprano_decoder.onnx",
+                        "soprano_decoder.onnx.data" to "onnx/soprano_decoder.onnx.data",
+                        "tokenizer.json" to "tokenizer.json"
+                    )
+                    // Download only missing directly into targetDir
+                    try {
+                        val totalFiles = missing.size
+                        missing.forEachIndexed { index, localName ->
+                            val relativePath = mapLocalToRemote[localName] ?: localName
+                            val fileUrl = "${baseUrl}${relativePath}?download=true"
+                            val destFile = File(targetDir, localName)
+                            DebugLogger.log("Downloading $localName...")
+                            val url = URL(fileUrl)
+                            val connection = url.openConnection() as HttpsURLConnection
+                            val token = userPreferencesRepository.hfToken.first()
+                            token?.let { connection.setRequestProperty("Authorization", "Bearer $it") }
+                            connection.connect()
+                            connection.inputStream.use { input ->
+                                FileOutputStream(destFile).use { output ->
+                                    val buffer = ByteArray(4096)
+                                    var bytesRead: Int
+                                    while (input.read(buffer).also { bytesRead = it } != -1) {
+                                        output.write(buffer, 0, bytesRead)
+                                    }
+                                }
+                            }
+                            val progress = (index + 1).toFloat() / totalFiles
+                            _progress.value = _progress.value.toMutableMap().apply { put(model.id, progress) }
+                        }
+                        model.isDownloaded = true
+                        model.hasPartial = false
+                        DebugLogger.log("ModelDownloader: Healing of ${model.name} completed")
+                        return
+                    } catch (e: Exception) {
+                        DebugLogger.log("ModelDownloader: Error healing ${model.name}: ${e.message}")
+                        // If healing fails, fall through to normal download into tempDir as a fallback
+                    } finally {
+                        _progress.value = _progress.value.toMutableMap().apply { remove(model.id) }
+                    }
+                }
+            } else {
+                model.isDownloaded = true
+                model.hasPartial = false
+                DebugLogger.log("ModelDownloader: ${model.name} already downloaded")
+                return
+            }
+        }
+
+        if (!tempDir.exists()) tempDir.mkdirs()
+        model.hasPartial = true
 
         DebugLogger.log("ModelDownloader: Starting download of ${model.name} (TTS)")
 

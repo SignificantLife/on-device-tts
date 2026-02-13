@@ -18,7 +18,6 @@ import com.mewmix.nabu.kokoro.RunEp
 
 object TTSManager {
     private var activeEngine: TTSEngine? = null
-    private var activeType: ModelType = ModelType.LLM // default to LLM/Kokoro logic
     private var activeRuntimePreference: RunEp? = null
     private var activeSupertonicModelId: String? = null
     private var activeSopranoModelId: String? = null
@@ -26,10 +25,13 @@ object TTSManager {
     // Let's use string id or a separate enum.
 
     suspend fun getEngine(context: Context, modelManager: ModelManager): TTSEngine? {
+        DebugLogger.log("TTSManager.getEngine: enter")
         val preferredEngineRaw = SettingsManager.getTtsEngine(context)
         val preferredEngine = preferredEngineRaw
         val preferredRuntime = SettingsManager.getRuntimePreference(context)
         val preferredSupertonicModel = SettingsManager.getSupertonicModelId(context)
+
+        DebugLogger.log("Prefs engine=%s runtime=%s supertonicModel=%s active=%s".format(preferredEngine, preferredRuntime, preferredSupertonicModel, activeEngine?.name))
 
         if (activeEngine != null) {
             // Check if active engine matches preference.
@@ -75,35 +77,46 @@ object TTSManager {
                 activeSupertonicModelId = null
                 activeSopranoModelId = null
             } else {
-                return activeEngine
+                DebugLogger.log("Reusing active engine: %s".format(activeEngine?.name)); return activeEngine
             }
         }
 
         if (preferredEngine == "soprano") {
-            val ttsModels = modelManager.models.filter { it.type == ModelType.TTS && it.isDownloaded }
-            val model = ttsModels.firstOrNull { it.id == "soprano-80m-onnx" }
-            if (model != null) {
-                val modelDir = File(context.filesDir, "models/${model.id}")
-                return try {
+            DebugLogger.log("TTSManager: Preference=Soprano. Verifying local model files...")
+            val modelId = "soprano-80m-onnx"
+            val modelDir = File(context.filesDir, "models/$modelId")
+            val required = listOf(
+                "soprano_backbone_kv.onnx",
+                "soprano_decoder.onnx",
+                "soprano_decoder.onnx.data",
+                "tokenizer.json"
+            )
+            val missing = required.filter { !File(modelDir, it).exists() }
+
+            if (missing.isEmpty()) {
+                try {
+                    DebugLogger.log("TTSManager: Loading Soprano from ${modelDir.absolutePath}")
                     val engine = SopranoEngine(modelDir, OrtEnvironment.getEnvironment())
                     activeEngine = BenchmarkingTTSEngine(engine)
                     activeRuntimePreference = RunEp.CPU
                     activeSupertonicModelId = null
-                    activeSopranoModelId = model.id
-                    DebugLogger.log("TTSManager: Switched to Soprano (${model.name})")
+                    activeSopranoModelId = modelId
+                    DebugLogger.log("TTSManager: Switched to Soprano ($modelId)")
                     activeEngine
+                    return activeEngine
                 } catch (e: Exception) {
-                    DebugLogger.log("TTSManager: Failed to load Soprano: ${e.message}")
-                    null
+                    DebugLogger.logErr("TTSManager: Failed to load Soprano from %s".format(modelDir.absolutePath), e)
+                    return null
                 }
             } else {
-                DebugLogger.log("TTSManager: Soprano selected but model not found or not downloaded.")
+                DebugLogger.log("TTSManager: Soprano selected but missing files: ${missing.joinToString()}")
                 return null
             }
         }
 
         if (preferredEngine == "supertonic") {
-            val ttsModels = modelManager.models.filter { it.type == ModelType.TTS && it.isDownloaded }
+            // Only consider Supertonic models, not Soprano
+            val ttsModels = modelManager.models.filter { it.type == ModelType.TTS && it.isDownloaded && it.id.startsWith("supertonic") }
             val selectedModel = preferredSupertonicModel?.let { modelId ->
                 ttsModels.firstOrNull { it.id == modelId }
             }
@@ -122,7 +135,7 @@ object TTSManager {
                     DebugLogger.log("TTSManager: Switched to Supertonic (${model.name})")
                     return activeEngine
                 } catch (e: Exception) {
-                    DebugLogger.log("TTSManager: Failed to load Supertonic: ${e.message}")
+                    DebugLogger.logErr("TTSManager: Failed to load Supertonic", e)
                     // Fallback to Kokoro? Or just return null?
                     // Let's fall back to Kokoro to be safe.
                 }
@@ -134,15 +147,19 @@ object TTSManager {
             }
         }
 
-        // Soprano engine switching is disabled; prefer Kokoro or Supertonic.
+        // Fallback or default to Kokoro (but not when user explicitly selected Soprano)
+        if (preferredEngine == "soprano") {
+            DebugLogger.log("TTSManager: Soprano selected; not falling back to Kokoro")
+            return null
+        }
 
-        // Fallback or default to Kokoro
         try {
+            DebugLogger.log("Kokoro fallback: initializing runtime")
             val bundle = OnnxRuntimeManager.initialize(context).getOrNull()
             if (bundle != null) {
                  activeEngine = BenchmarkingTTSEngine(OnnxRuntimeManager.getEngine())
                  activeRuntimePreference = preferredRuntime
-                 DebugLogger.log("TTSManager: Switched to Kokoro")
+                 DebugLogger.log("TTSManager: Switched to Kokoro (fallback or default)")
                  return activeEngine
             }
         } catch (e: Exception) {

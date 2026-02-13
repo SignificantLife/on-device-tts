@@ -20,6 +20,7 @@ object SettingsManager {
     private const val KEY_LLM_N_BATCH = "llm_n_batch"
     private const val KEY_LLM_TTFT_TIMEOUT_MS = "llm_ttft_timeout_ms"
     private const val KEY_LLM_TOTAL_TIMEOUT_MS = "llm_total_timeout_ms"
+    private const val KEY_METHOD_TRACING = "method_tracing"
 
     fun setDebug(context: Context, enabled: Boolean) {
         DatabaseManager.setSetting(context, "debug", if (enabled) "1" else "0")
@@ -34,6 +35,13 @@ object SettingsManager {
 
     fun isBenchmark(context: Context): Boolean =
         (DatabaseManager.getSetting(context, "benchmark") ?: "0") == "1"
+
+    fun setMethodTracingEnabled(context: Context, enabled: Boolean) {
+        DatabaseManager.setSetting(context, KEY_METHOD_TRACING, if (enabled) "1" else "0")
+    }
+
+    fun isMethodTracingEnabled(context: Context): Boolean =
+        (DatabaseManager.getSetting(context, KEY_METHOD_TRACING) ?: "0") == "1"
 
     fun setStyle(context: Context, style: String) {
         DatabaseManager.setSetting(context, "style", style)

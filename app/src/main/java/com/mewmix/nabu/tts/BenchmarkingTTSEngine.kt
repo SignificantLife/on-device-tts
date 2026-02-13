@@ -16,6 +16,7 @@ class BenchmarkingTTSEngine(val delegate: TTSEngine) : TTSEngine {
     override suspend fun synthesize(text: String, speed: Float): AudioResult {
         val start = System.currentTimeMillis()
         DebugLogger.log("BenchmarkingTTSEngine: Requesting synthesis. Engine: '$name', Provider: '$provider'")
+        DebugLogger.trace("BenchmarkingTTSEngine.synthesize")
         DebugLogger.log("BenchmarkingTTSEngine: Input text (length=${text.length}): \"${text.take(50)}${if (text.length > 50) "..." else ""}\"")
         DebugLogger.log("BenchmarkingTTSEngine: Parameters - Speed: $speed")
         

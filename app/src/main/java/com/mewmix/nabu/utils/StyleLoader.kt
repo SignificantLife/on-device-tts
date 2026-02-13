@@ -36,12 +36,15 @@ class StyleLoader(private val context: Context) {
                     }
                 }
                 return emptyList()
-            } else {
+            } else if (engine == "kokoro") {
                 return context.assets
                     .list("kokoro/voices")
                     ?.map { it.removeSuffix(".npy") }
                     ?.sorted()
                     ?: emptyList()
+            } else {
+                // Soprano or other engines: no style list
+                return emptyList()
             }
         }
 
