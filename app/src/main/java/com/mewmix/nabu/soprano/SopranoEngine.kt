@@ -33,13 +33,14 @@ class SopranoEngine(
     private val SAMPLE_RATE = 32000
     private val RECEPTIVE_FIELD = 4
     private val TOKEN_SIZE = 2048
+    private val MIN_TOKENS_BEFORE_STOP = 32
     // These are discovered from model IO at runtime
     private var kvDimHead: Long = 128
     private var kvNumHeads: Long = 1
     private var numLayers: Int = 17
     private var vocabSize: Int = 8192
     private var stopTokenId: Long = 3L
-    private val MAX_NEW_TOKENS = 512
+    private val MAX_NEW_TOKENS = 320
     private val TARGET_CHUNK_SIZE = 8
 
     init {
@@ -119,11 +120,8 @@ class SopranoEngine(
 
     override suspend fun synthesize(text: String, speed: Float): AudioResult = withContext(Dispatchers.Default) {
         DebugLogger.log("SopranoEngine.synthesize: textLen=${text.length} speed=$speed")
-        // 1. Normalize
-        val normalized = SopranoTextNormalizer.cleanText(text)
-
-        // 2. Preprocess (split sentences)
-        val prompts = preprocessText(normalized)
+        // Match the reference web pipeline: clean + prompt batching with [STOP][TEXT]...[START].
+        val prompts = preprocessText(text)
 
         val fullAudio = mutableListOf<Float>()
 
@@ -168,51 +166,99 @@ class SopranoEngine(
     }
 
     private fun preprocessText(text: String, batchSize: Int = 3, minLength: Int = 30): List<String> {
-        val rawSentences = text.split(Regex("(?<=[.!?])\\s+")).filter { it.isNotBlank() }
-
-        if (rawSentences.isEmpty()) {
-            return if (text.isNotBlank()) listOf("[STOP][TEXT]${text}[START]") else emptyList()
+        val cleaned = SopranoTextNormalizer.cleanText(text.trim())
+        var sentences = cleaned.split(Regex("(?<=[.!?])\\s+")).filter { it.isNotBlank() }.toMutableList()
+        if (sentences.isEmpty()) {
+            return if (cleaned.isNotBlank()) listOf("[STOP][TEXT]${cleaned}[START]") else emptyList()
         }
 
-        // Merge short sentences
-        val sentences = mutableListOf<String>()
-        if (minLength > 0 && rawSentences.size > 1) {
-            var current = ""
-            for (i in rawSentences.indices) {
-                val s = rawSentences[i]
-                if (current.isEmpty()) {
-                    current = s
-                } else if (current.length < minLength) {
-                    current = "$current $s"
+        if (minLength > 0 && sentences.size > 1) {
+            val merged = mutableListOf<String>()
+            var i = 0
+            while (i < sentences.size) {
+                val cur = sentences[i]
+                if (cur.length < minLength) {
+                    if (merged.isNotEmpty()) {
+                        merged[merged.lastIndex] = (merged.last() + " " + cur).trim()
+                    } else if (i + 1 < sentences.size) {
+                        sentences[i + 1] = (cur + " " + sentences[i + 1]).trim()
+                    } else {
+                        merged.add(cur)
+                    }
                 } else {
-                    sentences.add(current)
-                    current = s
+                    merged.add(cur)
                 }
+                i++
             }
-            if (current.isNotEmpty()) sentences.add(current)
-        } else {
-            sentences.addAll(rawSentences)
+            sentences = merged
         }
 
-        // Batch
         val prompts = mutableListOf<String>()
-        for (i in sentences.indices step batchSize) {
-            val batch = sentences.subList(i, minOf(i + batchSize, sentences.size)).joinToString(" ")
-            // Do not prefix with [STOP]; begin with [TEXT] and [START]
-            prompts.add("[TEXT]$batch[START]")
+        for (idx in sentences.indices step batchSize) {
+            val batch = sentences.subList(idx, minOf(idx + batchSize, sentences.size)).joinToString(" ")
+            prompts.add("[STOP][TEXT]$batch[START]")
         }
-
         return prompts
     }
 
+    private data class GenerationOutcome(
+        val audio: FloatArray,
+        val tokens: Int,
+        val stopDetected: Boolean
+    )
+
     private fun generate(prompt: String): FloatArray {
+        val maxAttempts = 3
+        var bestOutcome: GenerationOutcome? = null
+        var bestScore = Float.POSITIVE_INFINITY
+
+        for (attempt in 1..maxAttempts) {
+            val outcome = generateOnce(prompt)
+            val seconds = outcome.audio.size.toFloat() / SAMPLE_RATE
+            val score = generationScore(outcome, seconds)
+            if (score < bestScore) {
+                bestScore = score
+                bestOutcome = outcome
+            }
+
+            val needsRetry = !outcome.stopDetected || seconds < 1.5f || seconds > 12f
+            if (!needsRetry || attempt == maxAttempts) {
+                if (needsRetry) {
+                    DebugLogger.log(
+                        "SopranoEngine.generate: accepting best outlier after attempt=$attempt " +
+                            "stopDetected=${outcome.stopDetected} duration=${"%.2f".format(seconds)}s tokens=${outcome.tokens}"
+                    )
+                }
+                break
+            }
+            DebugLogger.log(
+                "SopranoEngine.generate: retrying attempt=${attempt + 1} " +
+                    "stopDetected=${outcome.stopDetected} duration=${"%.2f".format(seconds)}s tokens=${outcome.tokens}"
+            )
+        }
+
+        return bestOutcome?.audio ?: FloatArray(0)
+    }
+
+    private fun generationScore(outcome: GenerationOutcome, seconds: Float): Float {
+        var score = kotlin.math.abs(seconds - 6f)
+        if (!outcome.stopDetected) {
+            score += 100f
+        }
+        if (seconds < 1.5f) {
+            score += (1.5f - seconds) * 10f
+        }
+        if (seconds > 12f) {
+            score += (seconds - 12f) * 10f
+        }
+        return score
+    }
+
+    private fun generateOnce(prompt: String): GenerationOutcome {
         val inputIds = tokenizer.encode(prompt)
         val promptLen = inputIds.size
 
-        // --- KV Cache Management ---
-        // Map: "past_key_values.0.key" -> OnnxTensor
         val kvCache = mutableMapOf<String, OnnxTensor>()
-        // Use discovered kv input names when available; otherwise fall back to numbered names
         if (kvKeyNames.isNotEmpty() && kvValNames.size == kvKeyNames.size) {
             for (i in kvKeyNames.indices) {
                 val keyEmpty = OnnxTensor.createTensor(env, FloatBuffer.allocate(0), longArrayOf(1, kvNumHeads, 0, kvDimHead))
@@ -229,7 +275,6 @@ class SopranoEngine(
             }
         }
 
-        // --- State Variables ---
         var currentInputIds = OnnxTensor.createTensor(env, LongBuffer.wrap(inputIds), longArrayOf(1, inputIds.size.toLong()))
         val attentionMaskData = LongArray(promptLen + MAX_NEW_TOKENS) { 1L }
         var currentSeqLen = promptLen
@@ -241,41 +286,45 @@ class SopranoEngine(
         val hiddenStatesBuffer = mutableListOf<FloatArray>()
         val generatedAudio = mutableListOf<Float>()
         var chunkCounter = TARGET_CHUNK_SIZE
-        var firstChunk = true
 
         var seenTokenMask = BooleanArray(vocabSize)
         inputIds.forEach { if (it in 0 until vocabSize) seenTokenMask[it.toInt()] = true }
 
         var activeResult: OrtSession.Result? = null
+        var stopDetected = false
+        var generatedTokens = 0
+
+        val decoderChannels = runCatching {
+            val inputName = decoderSession.inputNames.first()
+            val tInfo = decoderSession.inputInfo[inputName]?.info as? ai.onnxruntime.TensorInfo
+            val dim = tInfo?.shape?.getOrNull(1) ?: 512L
+            if (dim > 0) dim.toInt() else 512
+        }.getOrElse { 512 }
+
+        fun safeClose(closeable: AutoCloseable?) {
+            runCatching { closeable?.close() }
+        }
 
         try {
             for (step in 0 until MAX_NEW_TOKENS) {
-                // Prepare Inputs
                 val inputs = mutableMapOf<String, OnnxTensor>()
                 inputs["input_ids"] = currentInputIds
                 inputs["attention_mask"] = currentAttentionMask
                 inputs["position_ids"] = currentPositionIds
                 inputs.putAll(kvCache)
 
-                // Run Backbone
                 val outputs = backboneSession.run(inputs)
-
-                // Process Outputs
-                // 1. Update KV Cache from outputs
-                // Close previous tensors (Inputs)
                 if (activeResult != null) {
-                    activeResult?.close() // This closes the KVs from previous step
+                    activeResult?.close()
                 } else {
-                     // First step: close manual tensors
-                     kvCache.values.forEach { it.close() }
+                    kvCache.values.forEach { it.close() }
                 }
                 kvCache.clear()
                 activeResult = outputs
 
-                // Logits is index 0, last hidden state is last output; KVs are in between.
                 val logitsTensor = outputs[0] as OnnxTensor
                 val lastHiddenStateTensor = outputs[outputs.size() - 1] as OnnxTensor
-                // Update vocab size and seen mask if this is the first step
+
                 if (step == 0) {
                     val shape = logitsTensor.info.shape
                     if (shape.size >= 3) {
@@ -291,190 +340,141 @@ class SopranoEngine(
                     }
                 }
 
-                // Correct Loop for KV Extraction
                 for (i in 0 until numLayers) {
                     val kName = if (kvKeyNames.isNotEmpty()) kvKeyNames[i] else "past_key_values.$i.key"
                     val vName = if (kvValNames.isNotEmpty()) kvValNames[i] else "past_key_values.$i.value"
-                    val kTensor = outputs.get(1 + i * 2) as OnnxTensor // Assuming order
+                    val kTensor = outputs.get(1 + i * 2) as OnnxTensor
                     val vTensor = outputs.get(2 + i * 2) as OnnxTensor
                     kvCache[kName] = kTensor
                     kvCache[vName] = vTensor
                 }
 
-                // 2. Sample Next Token
-                val nextToken = sample(logitsTensor, seenTokenMask)
-                if (nextToken == stopTokenId) { // [STOP]
-                    break
+                var nextToken = sample(logitsTensor, seenTokenMask)
+                if (nextToken == stopTokenId && generatedTokens < MIN_TOKENS_BEFORE_STOP) {
+                    nextToken = sample(logitsTensor, seenTokenMask, blockedTokenId = stopTokenId.toInt())
                 }
-                seenTokenMask[nextToken.toInt()] = true
+                val finished = nextToken == stopTokenId
+                if (nextToken >= 0 && nextToken < seenTokenMask.size.toLong()) {
+                    seenTokenMask[nextToken.toInt()] = true
+                }
 
-                // 3. Buffer Hidden State
-                // Extract last token's hidden state
                 val hiddenData = lastHiddenStateTensor.floatBuffer
-                // Shape: [1, SeqLen, HiddenDim]
-                // We want the last vector
                 val seqLen = lastHiddenStateTensor.info.shape[1]
-                val dim = lastHiddenStateTensor.info.shape[2] // 128
+                val dim = lastHiddenStateTensor.info.shape[2]
                 val offset = (seqLen - 1) * dim
                 val lastState = FloatArray(dim.toInt())
                 hiddenData.position(offset.toInt())
                 hiddenData.get(lastState)
 
-                if (step > 0) { // Skip first step (prompt processing)? JS: if (i > 0 && !finished)
-                     hiddenStatesBuffer.add(lastState)
+                if (step == 0) {
+                    DebugLogger.log("SopranoEngine: hiddenDim=${lastState.size} decoderChannels=$decoderChannels")
                 }
 
-                // Cleanup current run tensors
-                currentInputIds.close()
-                currentAttentionMask.close()
-                currentPositionIds.close()
-                // Do not close logits/hidden if they are part of activeResult which we keep?
-                // Actually, Result.close() closes ALL.
-                // We can't selectively close logits/hidden easily without affecting Result if Result owns them.
-                // But we can just let them be closed when we close activeResult next loop.
-                // It adds a bit of memory overhead (logits tensor stays alive for 1 step), but it's safe.
+                if (step > 0 && !finished) {
+                    hiddenStatesBuffer.add(lastState)
+                }
 
-                // 4. Decoder Step (Streaming)
-                 if (hiddenStatesBuffer.size >= RECEPTIVE_FIELD + TARGET_CHUNK_SIZE) {
-                     if (chunkCounter == TARGET_CHUNK_SIZE) {
-                         val windowSize = hiddenStatesBuffer.size
-                         // Prepare decoder input: [1, 512, windowSize]
-                         // JS: decoderInput[d * currentWindowSize + w] = window[w][d]; (Transpose?)
-                         // JS: [1, 512, currentWindowSize]
-                         // window[w] is size 128 (hidden dim).
-                         // Wait, JS Decoder input is [1, 512, Window].
-                         // Hidden dim is 128?
-                         // Check JS again: `decoderInput[d * currentWindowSize + w] = window[w][d]`
-                         // d goes 0..512? Hidden state is 128?
-                         // Ah, decoder takes 512 channels?
-                         // "const hiddenDim = 128;" in JS.
-                         // But decoder input loops to 512?
-                         // Maybe the hidden state is projected or I misread JS.
-                         // Re-read JS: `for (let d = 0; d < 512; d++)`
-                         // `window[w][d]` - this implies hidden state has 512 dims?
-                         // BUT `const hiddenDim = 128;` in `generationLoop`.
-                         // `lastHiddenState.dims[2]` is used.
-                         // THIS IS A MISMATCH.
-                         // In JS: `const hiddenDim = 128;`
-                         // BUT `const decoderInput = new Float32Array(512 * currentWindowSize);`
-                         // If `window[w]` only has 128 floats, `window[w][129]` is undefined/NaN.
-                         // This suggests `hiddenDim` in JS constant might be wrong OR `window` is different.
-                         // Wait, `lastHiddenState` comes from backbone.
-                         // Backbone output size?
-                         // If model is "Soprano-80M", hidden dim might be 512.
-                         // Let's assume `lastHiddenState` tensor provides the truth.
-                         // We will use `lastState.size` to determine D.
+                val maxSize = 2 * RECEPTIVE_FIELD + TARGET_CHUNK_SIZE
+                if (hiddenStatesBuffer.size > maxSize) {
+                    val removeCount = hiddenStatesBuffer.size - maxSize
+                    repeat(removeCount) { hiddenStatesBuffer.removeAt(0) }
+                }
 
-                         val D = lastState.size
-                         val decoderInputArr = FloatArray(D * windowSize) // Flattened [1, D, Window] ?
-                         // JS: `decoderInput[d * currentWindowSize + w] = window[w][d]`
-                         // Matrix: Rows=D, Cols=Window. Column-major or Row-major?
-                         // ORT expects flattened tensor. Shape [1, D, Window].
-                         // Flat index: `d * Window + w`.
-                         // This corresponds to Row-Major if D is Height and Window is Width.
+                if (finished || hiddenStatesBuffer.size >= RECEPTIVE_FIELD + TARGET_CHUNK_SIZE) {
+                    if (finished || chunkCounter == TARGET_CHUNK_SIZE) {
+                        val windowSize = hiddenStatesBuffer.size
+                        if (windowSize > 0) {
+                            val decoderInputArr = FloatArray(decoderChannels * windowSize)
+                            for (w in 0 until windowSize) {
+                                val vec = hiddenStatesBuffer[w]
+                                for (d in 0 until decoderChannels) {
+                                    decoderInputArr[d * windowSize + w] = if (d < vec.size) vec[d] else 0f
+                                }
+                            }
 
-                         for (w in 0 until windowSize) {
-                             val vec = hiddenStatesBuffer[w]
-                             for (d in 0 until D) {
-                                 decoderInputArr[d * windowSize + w] = vec[d]
-                             }
-                         }
+                            val decoderInputTensor = OnnxTensor.createTensor(
+                                env,
+                                FloatBuffer.wrap(decoderInputArr),
+                                longArrayOf(1, decoderChannels.toLong(), windowSize.toLong())
+                            )
+                            val decoderOut = decoderSession.run(
+                                Collections.singletonMap(decoderSession.inputNames.first(), decoderInputTensor)
+                            )
+                            val audioTensor = decoderOut.get(0) as OnnxTensor
+                            val audioData = audioTensor.floatBuffer
+                            val audioArr = FloatArray(audioData.remaining())
+                            audioData.get(audioArr)
 
-                         val decoderInputTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(decoderInputArr), longArrayOf(1, D.toLong(), windowSize.toLong()))
-                         val decoderOut = decoderSession.run(Collections.singletonMap(decoderSession.inputNames.first(), decoderInputTensor))
-                         val audioTensor = decoderOut.get(0) as OnnxTensor
-                         val audioData = audioTensor.floatBuffer
-                         val audioArr = FloatArray(audioData.remaining())
-                         audioData.get(audioArr)
+                            val len = audioArr.size
+                            if (finished) {
+                                val startIdx = (len - (RECEPTIVE_FIELD + chunkCounter - 1) * TOKEN_SIZE + TOKEN_SIZE).coerceAtLeast(0)
+                                for (k in startIdx until len) generatedAudio.add(audioArr[k])
+                            } else {
+                                val startIdx = (len - (RECEPTIVE_FIELD + TARGET_CHUNK_SIZE) * TOKEN_SIZE + TOKEN_SIZE).coerceAtLeast(0)
+                                val endIdx = (len - RECEPTIVE_FIELD * TOKEN_SIZE + TOKEN_SIZE).coerceAtMost(len)
+                                if (startIdx < endIdx) {
+                                    for (k in startIdx until endIdx) generatedAudio.add(audioArr[k])
+                                }
+                            }
 
-                         // Slice Audio
-                         // JS: startIdx = audio.length - (RECEPTIVE_FIELD + targetChunkSize) * TOKEN_SIZE + TOKEN_SIZE
-                         // JS: endIdx = audio.length - RECEPTIVE_FIELD * TOKEN_SIZE + TOKEN_SIZE
-                         val len = audioArr.size
-                         val startIdx = len - (RECEPTIVE_FIELD + TARGET_CHUNK_SIZE) * TOKEN_SIZE + TOKEN_SIZE
-                         val endIdx = len - RECEPTIVE_FIELD * TOKEN_SIZE + TOKEN_SIZE
+                            decoderInputTensor.close()
+                            audioTensor.close()
+                            decoderOut.close()
+                            chunkCounter = 0
+                        }
+                    }
+                    chunkCounter++
+                }
 
-                         if (startIdx >= 0 && endIdx <= len) {
-                             for (k in startIdx until endIdx) generatedAudio.add(audioArr[k])
-                         }
+                if (finished) {
+                    stopDetected = true
+                    break
+                }
 
-                         decoderInputTensor.close()
-                         audioTensor.close()
-                         decoderOut.close() // Close result wrapper
+                safeClose(currentInputIds)
+                safeClose(currentAttentionMask)
+                safeClose(currentPositionIds)
+                currentInputIds = OnnxTensor.createTensor(env, LongBuffer.wrap(longArrayOf(nextToken)), longArrayOf(1, 1))
 
-                         chunkCounter = 0
-                         firstChunk = false
-                     }
-                     chunkCounter++
-                 }
+                currentSeqLen++
+                val nextAttnMask = LongArray(currentSeqLen) { 1L }
+                currentAttentionMask = OnnxTensor.createTensor(
+                    env,
+                    LongBuffer.wrap(nextAttnMask),
+                    longArrayOf(1, currentSeqLen.toLong())
+                )
 
-                 // Trim buffer
-                 // JS: if (hiddenStatesBuffer.length > 2 * RECEPTIVE_FIELD + targetChunkSize) splice...
-                 val maxSize = 2 * RECEPTIVE_FIELD + TARGET_CHUNK_SIZE
-                 if (hiddenStatesBuffer.size > maxSize) {
-                     // Remove from start: `hiddenStatesBuffer.splice(0, length - maxSize)`
-                     val removeCount = hiddenStatesBuffer.size - maxSize
-                     repeat(removeCount) { hiddenStatesBuffer.removeAt(0) }
-                 }
-
-                 // 5. Prepare Next Step Inputs
-                 currentInputIds = OnnxTensor.createTensor(env, LongBuffer.wrap(longArrayOf(nextToken)), longArrayOf(1, 1))
-
-                 currentSeqLen++
-                 val nextAttnMask = LongArray(currentSeqLen) { 1L }
-                 currentAttentionMask = OnnxTensor.createTensor(env, LongBuffer.wrap(nextAttnMask), longArrayOf(1, currentSeqLen.toLong()))
-
-                 currentPositionIds = OnnxTensor.createTensor(env, LongBuffer.wrap(longArrayOf((currentSeqLen - 1).toLong())), longArrayOf(1, 1))
-
-            } // End Loop
-
-            // Final Flush (if needed) - JS handles finished state specially
-             if (hiddenStatesBuffer.isNotEmpty()) {
-                  val windowSize = hiddenStatesBuffer.size
-                  val D = hiddenStatesBuffer[0].size
-                  val decoderInputArr = FloatArray(D * windowSize)
-                  for (w in 0 until windowSize) {
-                      val vec = hiddenStatesBuffer[w]
-                      for (d in 0 until D) {
-                           decoderInputArr[d * windowSize + w] = vec[d]
-                      }
-                  }
-                  val decoderInputTensor = OnnxTensor.createTensor(env, FloatBuffer.wrap(decoderInputArr), longArrayOf(1, D.toLong(), windowSize.toLong()))
-                  val decoderOut = decoderSession.run(Collections.singletonMap(decoderSession.inputNames.first(), decoderInputTensor))
-                  val audioTensor = decoderOut.get(0) as OnnxTensor
-                  val audioArr = FloatArray(audioTensor.floatBuffer.remaining())
-                  audioTensor.floatBuffer.get(audioArr)
-
-                  // Flush logic from JS:
-                  // startIdx = audio.length - (RECEPTIVE_FIELD + chunkCounter - 1) * TOKEN_SIZE + TOKEN_SIZE;
-                  val len = audioArr.size
-                  // Note: chunkCounter here is whatever it ended at
-                  val startIdx = len - (RECEPTIVE_FIELD + chunkCounter - 1) * TOKEN_SIZE + TOKEN_SIZE
-                  if (startIdx < len && startIdx >= 0) {
-                      for (k in startIdx until len) generatedAudio.add(audioArr[k])
-                  }
-
-                  decoderInputTensor.close()
-                  audioTensor.close()
-                  decoderOut.close()
-             }
+                currentPositionIds = OnnxTensor.createTensor(
+                    env,
+                    LongBuffer.wrap(longArrayOf((currentSeqLen - 1).toLong())),
+                    longArrayOf(1, 1)
+                )
+                generatedTokens++
+            }
+            DebugLogger.log(
+                "SopranoEngine.generate: tokens=$generatedTokens stopDetected=$stopDetected samples=${generatedAudio.size}"
+            )
 
         } finally {
-            // Cleanup final tensors
-            currentInputIds.close()
-            currentAttentionMask.close()
-            currentPositionIds.close()
-            activeResult?.close()
-            // If activeResult was null (first step fail), kvCache might have manual tensors
+            safeClose(currentInputIds)
+            safeClose(currentAttentionMask)
+            safeClose(currentPositionIds)
+            safeClose(activeResult)
             if (activeResult == null) {
-                kvCache.values.forEach { it.close() }
+                kvCache.values.forEach { safeClose(it) }
             }
         }
 
-        return generatedAudio.toFloatArray()
+        return GenerationOutcome(
+            audio = generatedAudio.toFloatArray(),
+            tokens = generatedTokens,
+            stopDetected = stopDetected
+        )
     }
 
-    private fun sample(logits: OnnxTensor, seenMask: BooleanArray): Long {
+    private data class TokenScore(val score: Float, val tokenId: Int)
+
+    private fun sample(logits: OnnxTensor, seenMask: BooleanArray, blockedTokenId: Int? = null): Long {
         val floatBuffer = logits.floatBuffer
         // Shape [1, 1, Vocab] -> Last step is what we want?
         // Backbone run returns logits for the whole sequence?
@@ -484,59 +484,75 @@ class SopranoEngine(
         val seqLen = shape[1].toInt()
         val vocabSize = shape[2].toInt()
 
-        val scores = FloatArray(vocabSize)
-        floatBuffer.position((seqLen - 1) * vocabSize)
-        floatBuffer.get(scores)
-
-        // Settings (Hardcoded for now matching JS defaults)
+        // Settings (matching web ONNX reference)
         val temp = 0.3f
         val topK = 50
         val topP = 0.95f
         val repPenalty = 1.2f
 
-        // Apply Repetition Penalty & Temp
-        for (i in scores.indices) {
-            var s = scores[i] / temp
-            if (seenMask[i]) {
-                s = if (s < 0) s * repPenalty else s / repPenalty
-            }
-            scores[i] = s
-        }
-
-        // Top-K
-        // Sort indices by score
-        val indices = scores.indices.sortedByDescending { scores[it] }
         val k = minOf(topK, vocabSize)
-        val topKIndices = indices.take(k)
+        val invTemp = if (temp > 0f && temp != 1f) 1f / temp else 1f
+        val invRepPenalty = if (repPenalty != 0f) 1f / repPenalty else 1f
 
-        // Softmax on topK (compute in Double for numerical stability)
-        val topKScores = topKIndices.map { scores[it].toDouble() }
-        val maxScore = topKScores.maxOrNull() ?: 0.0
-        val expScores = topKScores.map { kotlin.math.exp(it - maxScore) }
-        val sumExp = expScores.sum()
+        val heap = PriorityQueue<TokenScore>(compareBy { it.score }) // min-heap
+        val rowStart = (seqLen - 1) * vocabSize
+        floatBuffer.position(rowStart)
+        for (tokenId in 0 until vocabSize) {
+            val raw = floatBuffer.get()
+            if (blockedTokenId != null && tokenId == blockedTokenId) {
+                continue
+            }
+            var s = raw * invTemp
+            if (seenMask[tokenId] && repPenalty != 1f) {
+                s = if (s < 0f) s * repPenalty else s * invRepPenalty
+            }
 
-        // Top-P
-        var cumulative = 0.0
-        val filteredIndices = mutableListOf<Int>()
-        val filteredProbs = mutableListOf<Double>()
-
-        for (i in topKIndices.indices) {
-            val prob = expScores[i] / sumExp
-            cumulative += prob
-            filteredIndices.add(topKIndices[i])
-            filteredProbs.add(prob)
-            if (cumulative >= topP) break
+            if (heap.size < k) {
+                heap.add(TokenScore(s, tokenId))
+            } else {
+                val min = heap.peek()
+                if (min != null && s > min.score) {
+                    heap.poll()
+                    heap.add(TokenScore(s, tokenId))
+                }
+            }
         }
 
-        // Sample
-        val rand = Random.nextDouble() * filteredProbs.sum() // Rescale if needed
-        var curr = 0.0
-        for (i in filteredIndices.indices) {
-            curr += filteredProbs[i]
-            if (curr >= rand) return filteredIndices[i].toLong()
+        if (heap.isEmpty()) return 0L
+
+        val top = heap.toMutableList().sortedByDescending { it.score }
+        val maxScore = top.first().score.toDouble()
+        val expWeights = DoubleArray(top.size)
+        var sumExp = 0.0
+        for (i in top.indices) {
+            val w = exp(top[i].score.toDouble() - maxScore)
+            expWeights[i] = w
+            sumExp += w
         }
 
-        return filteredIndices.first().toLong()
+        if (!(sumExp > 0.0) || !sumExp.isFinite()) {
+            return top.first().tokenId.toLong()
+        }
+
+        var keep = top.size
+        var totalWeight = sumExp
+        if (topP < 1f) {
+            val threshold = topP * sumExp
+            var cumulative = 0.0
+            for (i in top.indices) {
+                cumulative += expWeights[i]
+                keep = i + 1
+                if (cumulative >= threshold) break
+            }
+            totalWeight = cumulative
+        }
+
+        var r = Random.nextDouble() * totalWeight
+        for (i in 0 until keep) {
+            r -= expWeights[i]
+            if (r <= 0.0) return top[i].tokenId.toLong()
+        }
+        return top.first().tokenId.toLong()
     }
 
     override fun close() {
