@@ -114,6 +114,18 @@ fun CreditsConstellationScreen() {
                 CreditEntry(
                     "Supertonic: a lightweight TTS engine for Android",
                     "https://github.com/supertonic-tts/supertonic"
+                ),
+                CreditEntry(
+                    "Soprano: original model and inference code (Apache 2.0)",
+                    "https://github.com/ekwek1/soprano"
+                ),
+                CreditEntry(
+                    "Soprano Web ONNX: browser ONNX inference reference implementation",
+                    "https://github.com/KevinAHM/soprano-web-onnx"
+                ),
+                CreditEntry(
+                    "Soprano ONNX model packaging for deployment",
+                    "https://huggingface.co/KevinAHM/soprano-onnx"
                 )
             )
         )
