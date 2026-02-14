@@ -84,7 +84,14 @@ class SopranoEngine(
                 if (kvGroups.isNotEmpty()) {
                     val keys = mutableListOf<String>()
                     val vals = mutableListOf<String>()
-                    kvGroups.toSortedMap().forEach { (_, triples) ->
+                    val orderedPrefixes = kvGroups.keys.sortedWith(
+                        compareBy<String> { prefix ->
+                            Regex("past_key_values\\.(\\d+)$").find(prefix)?.groupValues?.get(1)?.toIntOrNull()
+                                ?: Int.MAX_VALUE
+                        }.thenBy { it }
+                    )
+                    orderedPrefixes.forEach { prefix ->
+                        val triples = kvGroups[prefix].orEmpty()
                         val keyName = triples.firstOrNull { it.second == "key" }?.third
                         val valName = triples.firstOrNull { it.second == "value" }?.third
                         if (keyName != null && valName != null) {
@@ -96,6 +103,9 @@ class SopranoEngine(
                         kvKeyNames = keys
                         kvValNames = vals
                         numLayers = keys.size
+                        DebugLogger.log(
+                            "SopranoEngine: KV order keys=${kvKeyNames.joinToString(limit = 6, truncated = "...")}"
+                        )
                         // Inspect shape from the first key input
                         val tInfo = backboneSession.inputInfo[keys.first()]?.info as? ai.onnxruntime.TensorInfo
                         val shape = tInfo?.shape
