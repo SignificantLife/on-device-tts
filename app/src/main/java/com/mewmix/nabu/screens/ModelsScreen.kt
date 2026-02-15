@@ -63,6 +63,7 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
     val modelDownloader = remember { ModelDownloader(context, userPreferencesRepository) }
     val models = modelManager.models
     val progressMap by modelDownloader.progress.collectAsState()
+    val detailedProgressMap by modelDownloader.detailedProgress.collectAsState()
     val scope = rememberCoroutineScope()
 
     var showDialog by remember { mutableStateOf(false) }
@@ -257,13 +258,29 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
                         Text(text = model.description, style = MaterialTheme.typography.bodyMedium)
                         Spacer(modifier = Modifier.height(8.dp))
                         val progress = progressMap[model.id]
+                        val detail = detailedProgressMap[model.id]
                         if (progress != null) {
-                            LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
+                            LinearProgressIndicator(
+                                progress = { progress.coerceIn(0f, 1f) },
+                                modifier = Modifier.fillMaxWidth()
+                            )
                             Text(
                                 text = "${(progress * 100).toInt()}%",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
+                            detail?.let {
+                                val bytesLabel = if (it.totalBytes > 0L) {
+                                    "${formatBytes(it.downloadedBytes)} / ${formatBytes(it.totalBytes)}"
+                                } else {
+                                    formatBytes(it.downloadedBytes)
+                                }
+                                Text(
+                                    text = "${it.currentFile}: $bytesLabel",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurface
+                                )
+                            }
                         } else {
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
@@ -318,8 +335,24 @@ fun ModelsScreen(userPreferencesRepository: UserPreferencesRepository) {
             val entry = progressMap.entries.first()
             val downloading = models.find { it.id == entry.key }
             val progress = entry.value
+            val detail = detailedProgressMap[entry.key]
+            val bytesLabel = detail?.let {
+                if (it.totalBytes > 0L) {
+                    "${formatBytes(it.downloadedBytes)} / ${formatBytes(it.totalBytes)}"
+                } else {
+                    formatBytes(it.downloadedBytes)
+                }
+            }
             ProgressDialog(
-                message = "Downloading ${downloading?.name ?: "model"} ${(progress * 100).toInt()}%",
+                message = buildString {
+                    append("Downloading ${downloading?.name ?: "model"} ${(progress * 100).toInt()}%")
+                    if (!bytesLabel.isNullOrBlank()) {
+                        append("\n")
+                        append(detail?.currentFile ?: "file")
+                        append(": ")
+                        append(bytesLabel)
+                    }
+                },
                 progress = progress,
             )
         }

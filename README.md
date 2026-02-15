@@ -108,8 +108,130 @@ Unknown/other file types fall back to plain text extraction.
   - Stores: `title`, `model_id`, serialized `messages` JSON, `created_at`, `updated_at`
 - Audiobook/project state:
   - Table: `projects` (URI, project name, style mix, speed, bookmark line, pregen path, pregen toggle)
-  - Table: `audio_lines` (per-line cached WAV file path by document URI + line index)
+- Table: `audio_lines` (per-line cached WAV file path by document URI + line index)
 - Result: chat history, selected model linkage, project settings, bookmarks, and pre-generated line audio survive app restarts.
+
+## Local API Server
+
+Nabu includes an opt-in local REST API server for on-device inference.
+
+- Default bind: `127.0.0.1:8455`
+- Optional LAN bind: `0.0.0.0:8455` (enable in Settings)
+- Security note: there is no API auth layer yet; use LAN exposure only on trusted networks.
+
+Enable it from Settings:
+- `Enable API Server`
+- `Expose API on LAN` (optional)
+
+### Health
+
+`GET /health`
+
+Returns:
+
+```json
+{"ok":true}
+```
+
+### Model Listing
+
+- `GET /models`
+- `POST /models`
+- `GET /v1/models`
+- `POST /v1/models`
+- `GET /tts/models`
+- `GET /v1/tts/models`
+
+Filters:
+- `type=llm|tts|all` query for `GET /models` and `GET /v1/models`
+- `{ "type": "llm|tts|all" }` JSON body for `POST /models` and `POST /v1/models`
+- Defaults: `llm` when no filter is provided
+
+### LLM Generation
+
+- `POST /generate`
+- `POST /v1/chat/completions` (OpenAI-compatible shape, non-streaming)
+
+`POST /generate` expects either `prompt` or `messages`:
+
+```json
+{
+  "model": "gemma3-1b-it-q4",
+  "prompt": "Summarize this paragraph in two sentences."
+}
+```
+
+`POST /v1/chat/completions` expects `messages`:
+
+```json
+{
+  "model": "gemma3-1b-it-q4",
+  "messages": [
+    {"role": "user", "content": "Hello from local API"}
+  ],
+  "stream": false
+}
+```
+
+### TTS Generation
+
+- `POST /tts/speech`
+- `POST /v1/audio/speech`
+
+Request fields:
+- `input` or `text` (required)
+- `engine` optional: `kokoro`, `supertonic`, `soprano`
+- `model` optional: e.g. `soprano-80m-onnx`, `supertonic-onnx`, `supertonic-2-onnx`
+- `voice`/`style` optional
+- `speed` optional (default `1.0`)
+- `response_format` optional: `wav` (default) or `json`
+
+`response_format: "wav"` returns `audio/wav` bytes.  
+`response_format: "json"` returns base64-encoded WAV plus metadata.
+
+### Error Shape
+
+Errors are returned as:
+
+```json
+{
+  "error": {
+    "message": "Human-readable message",
+    "type": "api_error"
+  }
+}
+```
+
+### Curl Examples
+
+Health:
+
+```bash
+curl http://127.0.0.1:8455/health
+```
+
+List only TTS models:
+
+```bash
+curl "http://127.0.0.1:8455/models?type=tts"
+```
+
+Generate TTS WAV:
+
+```bash
+curl -X POST "http://127.0.0.1:8455/tts/speech" \
+  -H "Content-Type: application/json" \
+  -d '{"input":"do not be alarmed i am simply testing the update for alex","engine":"soprano","response_format":"wav"}' \
+  --output out.wav
+```
+
+Generate TTS JSON (base64 audio):
+
+```bash
+curl -X POST "http://127.0.0.1:8455/v1/audio/speech" \
+  -H "Content-Type: application/json" \
+  -d '{"input":"test line","engine":"soprano","response_format":"json"}'
+```
 
 ## Build
 

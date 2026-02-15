@@ -88,6 +88,21 @@ object Downloader {
             }
         }
 
+    suspend fun downloadFile(
+        url: String,
+        target: File,
+        headers: Map<String, String> = emptyMap(),
+        onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit = { _, _ -> }
+    ): Result<Unit> = withContext(Dispatchers.IO) {
+        runCatching {
+            target.parentFile?.mkdirs()
+            val contentLength = fetchContentLength(url, headers) ?: -1L
+            rangeDownload(url, target, headers) { downloaded ->
+                onProgress(downloaded, contentLength)
+            }
+        }
+    }
+
     fun modelsAvailable(ctx: Context, manifest: Manifest): Boolean {
         val root = File(ctx.filesDir, "")
         return manifest.files.all { file ->
@@ -97,13 +112,21 @@ object Downloader {
     }
 
     @Throws(IOException::class)
-    private fun rangeDownload(url: String, target: File, onProgress: (Long) -> Unit) {
+    private fun rangeDownload(
+        url: String,
+        target: File,
+        headers: Map<String, String> = emptyMap(),
+        onProgress: (Long) -> Unit
+    ) {
         var existingBytes = if (target.exists()) target.length() else 0L
 
         val requestBuilder = Request.Builder()
             .url(url)
             .header("User-Agent", "Nabu/1.0 KokoroDownloader")
             .header("Accept-Encoding", "identity")
+        headers.forEach { (name, value) ->
+            requestBuilder.header(name, value)
+        }
 
         if (existingBytes > 0L) {
             requestBuilder.header("Range", "bytes=$existingBytes-")
@@ -146,6 +169,25 @@ object Downloader {
                     }
                 }
             }
+        }
+    }
+
+    private fun fetchContentLength(url: String, headers: Map<String, String>): Long? {
+        return try {
+            val requestBuilder = Request.Builder()
+                .url(url)
+                .head()
+                .header("User-Agent", "Nabu/1.0 KokoroDownloader")
+                .header("Accept-Encoding", "identity")
+            headers.forEach { (name, value) ->
+                requestBuilder.header(name, value)
+            }
+            client.newCall(requestBuilder.build()).execute().use { response ->
+                if (!response.isSuccessful) return null
+                response.header("Content-Length")?.toLongOrNull()?.takeIf { it > 0L }
+            }
+        } catch (_: Exception) {
+            null
         }
     }
 }

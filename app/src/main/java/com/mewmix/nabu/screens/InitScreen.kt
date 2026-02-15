@@ -63,6 +63,7 @@ fun InitScreen(
     val modelManager = remember { ModelManager(context) }
     val modelDownloader = remember { ModelDownloader(context, userPreferencesRepository) }
     val progressMap by modelDownloader.progress.collectAsState()
+    val detailedProgressMap by modelDownloader.detailedProgress.collectAsState()
     val ttsModels = modelManager.models.filter { it.type == ModelType.TTS }
     var selectedModel by remember { mutableStateOf<Model?>(ttsModels.firstOrNull()) }
 
@@ -244,6 +245,7 @@ fun InitScreen(
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         val modelProgress = progressMap[model.id]
+                        val modelDetail = detailedProgressMap[model.id]
                         if (modelProgress != null) {
                             LinearProgressIndicator(
                                 progress = { modelProgress.coerceIn(0f, 1f) },
@@ -254,6 +256,18 @@ fun InitScreen(
                                 style = MaterialTheme.typography.bodySmall,
                                 color = Brutal.textBright
                             )
+                            modelDetail?.let { detail ->
+                                val bytesLabel = if (detail.totalBytes > 0L) {
+                                    "${formatBytes(detail.downloadedBytes)} / ${formatBytes(detail.totalBytes)}"
+                                } else {
+                                    formatBytes(detail.downloadedBytes)
+                                }
+                                Text(
+                                    "${detail.currentFile}: $bytesLabel",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = Brutal.textBright
+                                )
+                            }
                         } else {
                             val label = if (model.isDownloaded) "Downloaded" else "Download"
                             BrutalButton(
