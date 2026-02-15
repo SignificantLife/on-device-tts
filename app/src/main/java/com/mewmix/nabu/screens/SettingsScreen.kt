@@ -57,6 +57,7 @@ fun SettingsScreen() {
     var benchmark by remember { mutableStateOf(SettingsManager.isBenchmark(context)) }
     var methodTracing by remember { mutableStateOf(SettingsManager.isMethodTracingEnabled(context)) }
     var apiEnabled by remember { mutableStateOf(SettingsManager.isApiEnabled(context)) }
+    var apiLanEnabled by remember { mutableStateOf(SettingsManager.isApiLanEnabled(context)) }
     var runtime by remember { mutableStateOf(SettingsManager.getRuntimePreference(context)) }
     val storedTtsEngine = SettingsManager.getTtsEngine(context)
     var ttsEngine by remember { mutableStateOf(storedTtsEngine) }
@@ -143,12 +144,31 @@ fun SettingsScreen() {
                 label = "Local API Server"
             )
 
+            SwitchToggle(
+                checked = apiLanEnabled,
+                onToggle = { enabled ->
+                    apiLanEnabled = enabled
+                    SettingsManager.setApiLanEnabled(context, enabled)
+                    ApiServerManager.syncWithSettings(context.applicationContext)
+                },
+                label = "Expose API on LAN"
+            )
+
             if (apiEnabled) {
+                val host = ApiServerManager.currentHost() ?: ApiServerManager.configuredHost(context.applicationContext)
+                val port = ApiServerManager.currentPort()
                 Text(
-                    text = "Listening on http://${ApiServerManager.HOST}:${ApiServerManager.PORT}",
+                    text = "Listening on http://$host:$port",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )
+                if (apiLanEnabled) {
+                    Text(
+                        text = "LAN mode: use your device IP on the same network.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
             }
 
             // Trace status line

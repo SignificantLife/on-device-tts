@@ -22,6 +22,7 @@ object SettingsManager {
     private const val KEY_LLM_TOTAL_TIMEOUT_MS = "llm_total_timeout_ms"
     private const val KEY_METHOD_TRACING = "method_tracing"
     private const val KEY_API_ENABLED = "api_enabled"
+    private const val KEY_API_LAN_ENABLED = "api_lan_enabled"
 
     fun setDebug(context: Context, enabled: Boolean) {
         DatabaseManager.setSetting(context, "debug", if (enabled) "1" else "0")
@@ -51,6 +52,15 @@ object SettingsManager {
     fun isApiEnabled(context: Context, default: Boolean = false): Boolean {
         val fallback = if (default) "1" else "0"
         return (DatabaseManager.getSetting(context, KEY_API_ENABLED) ?: fallback) == "1"
+    }
+
+    fun setApiLanEnabled(context: Context, enabled: Boolean) {
+        DatabaseManager.setSetting(context, KEY_API_LAN_ENABLED, if (enabled) "1" else "0")
+    }
+
+    fun isApiLanEnabled(context: Context, default: Boolean = false): Boolean {
+        val fallback = if (default) "1" else "0"
+        return (DatabaseManager.getSetting(context, KEY_API_LAN_ENABLED) ?: fallback) == "1"
     }
 
     fun setStyle(context: Context, style: String) {

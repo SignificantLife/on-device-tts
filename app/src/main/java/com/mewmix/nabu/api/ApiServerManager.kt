@@ -5,17 +5,31 @@ import com.mewmix.nabu.utils.DebugLogger
 import com.mewmix.nabu.utils.SettingsManager
 
 object ApiServerManager {
-    const val HOST: String = "127.0.0.1"
+    const val LOCAL_HOST: String = "127.0.0.1"
+    const val LAN_HOST: String = "0.0.0.0"
     const val PORT: Int = 8455
 
     private val lock = Any()
     private var server: ApiServer? = null
+    private var boundHost: String? = null
+    private var portOverride: Int? = null
 
     fun syncWithSettings(context: Context) {
-        if (SettingsManager.isApiEnabled(context)) {
-            start(context)
-        } else {
+        if (!SettingsManager.isApiEnabled(context)) {
             stop()
+            return
+        }
+
+        val appContext = context.applicationContext
+        val desiredHost = configuredHost(appContext)
+        val desiredPort = resolvedPort()
+
+        synchronized(lock) {
+            if (server?.isRunning() == true && boundHost == desiredHost) {
+                return
+            }
+            stopLocked()
+            startLocked(appContext, desiredHost, desiredPort)
         }
     }
 
@@ -25,35 +39,73 @@ object ApiServerManager {
                 return
             }
 
-            val created = ApiServer(
-                context = context.applicationContext,
-                host = HOST,
-                port = PORT
-            )
-
-            try {
-                created.start()
-                server = created
-            } catch (t: Throwable) {
-                DebugLogger.logErr("Failed to start ApiServer", t)
-            }
+            val appContext = context.applicationContext
+            val desiredHost = configuredHost(appContext)
+            val desiredPort = resolvedPort()
+            startLocked(appContext, desiredHost, desiredPort)
         }
+    }
+
+    fun configuredHost(context: Context): String {
+        return if (SettingsManager.isApiLanEnabled(context)) LAN_HOST else LOCAL_HOST
+    }
+
+    fun currentHost(): String? = synchronized(lock) {
+        boundHost
+    }
+
+    fun currentPort(): Int = synchronized(lock) {
+        resolvedPort()
     }
 
     fun stop() {
         synchronized(lock) {
-            val current = server ?: return
-            try {
-                current.stop()
-            } catch (t: Throwable) {
-                DebugLogger.logErr("Failed to stop ApiServer", t)
-            } finally {
-                server = null
-            }
+            stopLocked()
+        }
+    }
+
+    private fun startLocked(context: Context, host: String, port: Int) {
+        val created = ApiServer(
+            context = context,
+            host = host,
+            port = port
+        )
+
+        try {
+            created.start()
+            server = created
+            boundHost = host
+        } catch (t: Throwable) {
+            DebugLogger.logErr("Failed to start ApiServer", t)
+            server = null
+            boundHost = null
+        }
+    }
+
+    private fun stopLocked() {
+        val current = server ?: run {
+            boundHost = null
+            return
+        }
+        try {
+            current.stop()
+        } catch (t: Throwable) {
+            DebugLogger.logErr("Failed to stop ApiServer", t)
+        } finally {
+            server = null
+            boundHost = null
         }
     }
 
     fun isRunning(): Boolean = synchronized(lock) {
         server?.isRunning() == true
+    }
+
+    private fun resolvedPort(): Int = portOverride ?: PORT
+
+    fun setPortOverrideForTesting(port: Int?) {
+        synchronized(lock) {
+            portOverride = port
+        }
     }
 }

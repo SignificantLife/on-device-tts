@@ -12,6 +12,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import java.net.HttpURLConnection
+import java.net.ServerSocket
 import java.net.URL
 
 @RunWith(RobolectricTestRunner::class)
@@ -22,14 +23,19 @@ class ApiServerManagerTest {
     @Before
     fun setUp() {
         context = ApplicationProvider.getApplicationContext()
+        val freePort = ServerSocket(0).use { it.localPort }
+        ApiServerManager.setPortOverrideForTesting(freePort)
         SettingsManager.setApiEnabled(context, false)
+        SettingsManager.setApiLanEnabled(context, false)
         ApiServerManager.stop()
     }
 
     @After
     fun tearDown() {
         ApiServerManager.stop()
+        ApiServerManager.setPortOverrideForTesting(null)
         SettingsManager.setApiEnabled(context, false)
+        SettingsManager.setApiLanEnabled(context, false)
     }
 
     @Test
@@ -39,7 +45,7 @@ class ApiServerManagerTest {
 
         assertTrue(ApiServerManager.isRunning())
 
-        val conn = URL("http://${ApiServerManager.HOST}:${ApiServerManager.PORT}/health")
+        val conn = URL("http://${ApiServerManager.LOCAL_HOST}:${ApiServerManager.currentPort()}/health")
             .openConnection() as HttpURLConnection
         conn.requestMethod = "GET"
         conn.connectTimeout = 2_000
@@ -53,5 +59,28 @@ class ApiServerManagerTest {
         ApiServerManager.syncWithSettings(context)
         assertFalse(ApiServerManager.isRunning())
     }
-}
 
+    @Test
+    fun syncWithSettings_rebindsWhenLanModeChanges() {
+        SettingsManager.setApiEnabled(context, true)
+        SettingsManager.setApiLanEnabled(context, false)
+        ApiServerManager.syncWithSettings(context)
+        assertTrue(ApiServerManager.isRunning())
+        assertTrue(ApiServerManager.currentHost() == ApiServerManager.LOCAL_HOST)
+
+        SettingsManager.setApiLanEnabled(context, true)
+        ApiServerManager.syncWithSettings(context)
+
+        assertTrue(ApiServerManager.isRunning())
+        assertTrue(ApiServerManager.currentHost() == ApiServerManager.LAN_HOST)
+
+        val conn = URL("http://${ApiServerManager.LOCAL_HOST}:${ApiServerManager.currentPort()}/health")
+            .openConnection() as HttpURLConnection
+        conn.requestMethod = "GET"
+        conn.connectTimeout = 2_000
+        conn.readTimeout = 2_000
+        val body = conn.inputStream.bufferedReader().use { it.readText() }
+        val json = JSONObject(body)
+        assertTrue(json.optBoolean("ok"))
+    }
+}
