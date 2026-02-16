@@ -150,7 +150,7 @@ Filters:
 ### LLM Generation
 
 - `POST /generate`
-- `POST /v1/chat/completions` (OpenAI-compatible shape, non-streaming)
+- `POST /v1/chat/completions` (OpenAI-compatible shape)
 
 `POST /generate` expects either `prompt` or `messages`:
 
@@ -160,6 +160,10 @@ Filters:
   "prompt": "Summarize this paragraph in two sentences."
 }
 ```
+
+Optional streaming:
+- Set `"stream": true` to receive Server-Sent Events (SSE)
+- Each event is sent as `data: <json>` and terminates with `data: [DONE]`
 
 `POST /v1/chat/completions` expects `messages`:
 
@@ -172,6 +176,11 @@ Filters:
   "stream": false
 }
 ```
+
+`/v1/chat/completions` streaming follows OpenAI-style chunk events:
+- `Content-Type: text/event-stream`
+- `data: {...chat.completion.chunk...}`
+- final `data: [DONE]`
 
 ### TTS Generation
 
@@ -231,6 +240,26 @@ Generate TTS JSON (base64 audio):
 curl -X POST "http://127.0.0.1:8455/v1/audio/speech" \
   -H "Content-Type: application/json" \
   -d '{"input":"test line","engine":"soprano","response_format":"json"}'
+```
+
+Stream `/generate`:
+
+```bash
+curl -N -X POST "http://127.0.0.1:8455/generate" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gemma3-1b-it-q4","prompt":"List three planets.","stream":true}'
+```
+
+Stream `/v1/chat/completions`:
+
+```bash
+curl -N -X POST "http://127.0.0.1:8455/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model":"gemma3-1b-it-q4",
+    "messages":[{"role":"user","content":"Say hello in five words."}],
+    "stream":true
+  }'
 ```
 
 ## Build

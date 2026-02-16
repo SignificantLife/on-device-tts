@@ -26,14 +26,17 @@ import io.ktor.server.engine.embeddedServer
 import io.ktor.server.request.receiveText
 import io.ktor.server.response.respondBytes
 import io.ktor.server.response.respondText
+import io.ktor.server.response.respondTextWriter
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 import io.ktor.server.routing.routing
 import io.ktor.server.cio.CIO
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.Writer
 import java.io.File
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -154,6 +157,7 @@ class ApiServer(
             val requestedModel = body.optString("model").ifBlank { null }
             val prompt = body.optString("prompt").trim()
             val messageArray = body.optJSONArray("messages")
+            val stream = body.optBoolean("stream", false)
 
             if (prompt.isEmpty() && messageArray == null) {
                 respondApiError(
@@ -161,6 +165,27 @@ class ApiServer(
                     status = HttpStatusCode.BadRequest,
                     message = "Provide either 'prompt' or 'messages'."
                 )
+                return
+            }
+
+            if (stream) {
+                if (messageArray != null) {
+                    streamGenerateSse(
+                        call = call,
+                        requestedModel = requestedModel,
+                        sendGeneration = { backend, listener ->
+                            backend.sendMessage(parseMessages(messageArray), listener)
+                        }
+                    )
+                } else {
+                    streamGenerateSse(
+                        call = call,
+                        requestedModel = requestedModel,
+                        sendGeneration = { backend, listener ->
+                            backend.sendMessage(prompt, listener)
+                        }
+                    )
+                }
                 return
             }
 
@@ -181,9 +206,14 @@ class ApiServer(
             )
         } catch (t: Throwable) {
             DebugLogger.logErr("ApiServer /generate failed", t)
+            val status = if (t is IllegalArgumentException) {
+                HttpStatusCode.BadRequest
+            } else {
+                HttpStatusCode.InternalServerError
+            }
             respondApiError(
                 call = call,
-                status = HttpStatusCode.InternalServerError,
+                status = status,
                 message = t.message ?: "Generation failed"
             )
         }
@@ -265,14 +295,7 @@ class ApiServer(
     private suspend fun handleChatCompletions(call: io.ktor.server.application.ApplicationCall) {
         try {
             val body = JSONObject(call.receiveText())
-            if (body.optBoolean("stream", false)) {
-                respondApiError(
-                    call = call,
-                    status = HttpStatusCode.BadRequest,
-                    message = "Streaming is not supported."
-                )
-                return
-            }
+            val stream = body.optBoolean("stream", false)
 
             val requestedModel = body.optString("model").ifBlank { null }
             val messageArray = body.optJSONArray("messages")
@@ -285,7 +308,17 @@ class ApiServer(
                 return
             }
 
-            val generation = generateFromMessages(requestedModel, parseMessages(messageArray))
+            val messages = parseMessages(messageArray)
+            if (stream) {
+                streamChatCompletionsSse(
+                    call = call,
+                    requestedModel = requestedModel,
+                    messages = messages
+                )
+                return
+            }
+
+            val generation = generateFromMessages(requestedModel, messages)
             val nowSeconds = System.currentTimeMillis() / 1000L
 
             val choice = JSONObject()
@@ -319,11 +352,199 @@ class ApiServer(
             )
         } catch (t: Throwable) {
             DebugLogger.logErr("ApiServer /v1/chat/completions failed", t)
+            val status = if (t is IllegalArgumentException) {
+                HttpStatusCode.BadRequest
+            } else {
+                HttpStatusCode.InternalServerError
+            }
             respondApiError(
                 call = call,
-                status = HttpStatusCode.InternalServerError,
+                status = status,
                 message = t.message ?: "Generation failed"
             )
+        }
+    }
+
+    private suspend fun streamGenerateSse(
+        call: io.ktor.server.application.ApplicationCall,
+        requestedModel: String?,
+        sendGeneration: (LlmBackend, (String, Boolean) -> Unit) -> Unit
+    ) {
+        call.respondTextWriter(
+            contentType = ContentType.Text.EventStream,
+            status = HttpStatusCode.OK
+        ) {
+            val responseId = "gen-${System.currentTimeMillis()}"
+            val created = System.currentTimeMillis() / 1000L
+            try {
+                requestLock.withLock {
+                    val (modelId, activeBackend) = getOrCreateBackend(requestedModel)
+                    when (activeBackend) {
+                        is LlamaCppBackend -> activeBackend.updateConfig(SettingsManager.getLlmRuntimeConfig(context))
+                        is MediaPipeBackend -> activeBackend.updateConfig(SettingsManager.getMediaPipeRuntimeConfig(context))
+                    }
+
+                    val stream = Channel<StreamEvent>(Channel.UNLIMITED)
+                    sendGeneration(activeBackend) { partial, done ->
+                        if (done) {
+                            stream.trySend(StreamEvent.Done)
+                            stream.close()
+                            return@sendGeneration
+                        }
+                        if (partial.isNotEmpty()) {
+                            stream.trySend(StreamEvent.Token(partial))
+                        }
+                    }
+
+                    var finalText = ""
+                    for (event in stream) {
+                        when (event) {
+                            is StreamEvent.Token -> {
+                                finalText += event.chunk
+                                writeSseData(
+                                    JSONObject()
+                                        .put("id", responseId)
+                                        .put("object", "generate.chunk")
+                                        .put("created", created)
+                                        .put("model", modelId)
+                                        .put("delta", event.chunk)
+                                        .toString()
+                                )
+                            }
+                            StreamEvent.Done -> {
+                                writeSseData(
+                                    JSONObject()
+                                        .put("id", responseId)
+                                        .put("object", "generate.result")
+                                        .put("created", created)
+                                        .put("model", modelId)
+                                        .put("text", finalText)
+                                        .toString()
+                                )
+                                writeSseDone()
+                            }
+                        }
+                    }
+                }
+            } catch (t: Throwable) {
+                DebugLogger.logErr("ApiServer /generate stream failed", t)
+                writeSseData(
+                    JSONObject()
+                        .put("error", JSONObject()
+                            .put("message", t.message ?: "Generation failed")
+                            .put("type", "api_error"))
+                        .toString()
+                )
+                writeSseDone()
+            }
+        }
+    }
+
+    private suspend fun streamChatCompletionsSse(
+        call: io.ktor.server.application.ApplicationCall,
+        requestedModel: String?,
+        messages: List<LlmMessage>
+    ) {
+        call.respondTextWriter(
+            contentType = ContentType.Text.EventStream,
+            status = HttpStatusCode.OK
+        ) {
+            val responseId = "chatcmpl-${System.currentTimeMillis()}"
+            val created = System.currentTimeMillis() / 1000L
+            try {
+                requestLock.withLock {
+                    val (modelId, activeBackend) = getOrCreateBackend(requestedModel)
+                    when (activeBackend) {
+                        is LlamaCppBackend -> activeBackend.updateConfig(SettingsManager.getLlmRuntimeConfig(context))
+                        is MediaPipeBackend -> activeBackend.updateConfig(SettingsManager.getMediaPipeRuntimeConfig(context))
+                    }
+
+                    val stream = Channel<StreamEvent>(Channel.UNLIMITED)
+                    activeBackend.sendMessage(messages) { partial, done ->
+                        if (done) {
+                            stream.trySend(StreamEvent.Done)
+                            stream.close()
+                            return@sendMessage
+                        }
+                        if (partial.isNotEmpty()) {
+                            stream.trySend(StreamEvent.Token(partial))
+                        }
+                    }
+
+                    // Initial delta carries role for OpenAI stream parity.
+                    writeSseData(
+                        JSONObject()
+                            .put("id", responseId)
+                            .put("object", "chat.completion.chunk")
+                            .put("created", created)
+                            .put("model", modelId)
+                            .put(
+                                "choices",
+                                JSONArray().put(
+                                    JSONObject()
+                                        .put("index", 0)
+                                        .put("delta", JSONObject().put("role", "assistant"))
+                                        .put("finish_reason", JSONObject.NULL)
+                                )
+                            )
+                            .toString()
+                    )
+
+                    for (event in stream) {
+                        when (event) {
+                            is StreamEvent.Token -> {
+                                writeSseData(
+                                    JSONObject()
+                                        .put("id", responseId)
+                                        .put("object", "chat.completion.chunk")
+                                        .put("created", created)
+                                        .put("model", modelId)
+                                        .put(
+                                            "choices",
+                                            JSONArray().put(
+                                                JSONObject()
+                                                    .put("index", 0)
+                                                    .put("delta", JSONObject().put("content", event.chunk))
+                                                    .put("finish_reason", JSONObject.NULL)
+                                            )
+                                        )
+                                        .toString()
+                                )
+                            }
+                            StreamEvent.Done -> {
+                                writeSseData(
+                                    JSONObject()
+                                        .put("id", responseId)
+                                        .put("object", "chat.completion.chunk")
+                                        .put("created", created)
+                                        .put("model", modelId)
+                                        .put(
+                                            "choices",
+                                            JSONArray().put(
+                                                JSONObject()
+                                                    .put("index", 0)
+                                                    .put("delta", JSONObject())
+                                                    .put("finish_reason", "stop")
+                                            )
+                                        )
+                                        .toString()
+                                )
+                                writeSseDone()
+                            }
+                        }
+                    }
+                }
+            } catch (t: Throwable) {
+                DebugLogger.logErr("ApiServer /v1/chat/completions stream failed", t)
+                writeSseData(
+                    JSONObject()
+                        .put("error", JSONObject()
+                            .put("message", t.message ?: "Generation failed")
+                            .put("type", "api_error"))
+                        .toString()
+                )
+                writeSseDone()
+            }
         }
     }
 
@@ -583,6 +804,18 @@ class ApiServer(
             messages.add(LlmMessage(role = role, content = content))
         }
         return messages
+    }
+
+    private suspend fun Writer.writeSseData(payload: String) {
+        write("data: ")
+        write(payload)
+        write("\n\n")
+        flush()
+    }
+
+    private suspend fun Writer.writeSseDone() {
+        write("data: [DONE]\n\n")
+        flush()
     }
 
     private suspend fun synthesizeTts(request: TtsSynthesisRequest): TtsSynthesisResult {
@@ -911,4 +1144,9 @@ class ApiServer(
         val modelId: String,
         val engine: String
     )
+
+    private sealed interface StreamEvent {
+        data class Token(val chunk: String) : StreamEvent
+        data object Done : StreamEvent
+    }
 }
