@@ -386,13 +386,13 @@ class ApiServer(
 
                     val stream = Channel<StreamEvent>(Channel.UNLIMITED)
                     sendGeneration(activeBackend) { partial, done ->
+                        if (partial.isNotEmpty()) {
+                            stream.trySend(StreamEvent.Token(partial))
+                        }
                         if (done) {
                             stream.trySend(StreamEvent.Done)
                             stream.close()
                             return@sendGeneration
-                        }
-                        if (partial.isNotEmpty()) {
-                            stream.trySend(StreamEvent.Token(partial))
                         }
                     }
 
@@ -461,13 +461,13 @@ class ApiServer(
 
                     val stream = Channel<StreamEvent>(Channel.UNLIMITED)
                     activeBackend.sendMessage(messages) { partial, done ->
+                        if (partial.isNotEmpty()) {
+                            stream.trySend(StreamEvent.Token(partial))
+                        }
                         if (done) {
                             stream.trySend(StreamEvent.Done)
                             stream.close()
                             return@sendMessage
-                        }
-                        if (partial.isNotEmpty()) {
-                            stream.trySend(StreamEvent.Token(partial))
                         }
                     }
 
@@ -772,8 +772,10 @@ class ApiServer(
 
             try {
                 send { partialResult, done ->
-                    if (!done) {
+                    if (partialResult.isNotEmpty()) {
                         responseBuilder.append(partialResult)
+                    }
+                    if (!done) {
                         return@send
                     }
 
