@@ -1,6 +1,7 @@
 package com.mewmix.nabu.data
 
 import com.mewmix.nabu.kokoro.Downloader
+import com.mewmix.nabu.kokoro.ManifestProvider
 import com.mewmix.nabu.utils.DebugLogger
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -16,6 +17,7 @@ class ModelDownloader(
     private val userPreferencesRepository: UserPreferencesRepository,
 ) {
     companion object {
+        const val KOKORO_MODEL_ID = "kokoro-default"
         private val activeModelDownloads = mutableSetOf<String>()
     }
 
@@ -38,6 +40,25 @@ class ModelDownloader(
     private val _detailedProgress = MutableStateFlow<Map<String, DetailedProgress>>(emptyMap())
     val detailedProgress: StateFlow<Map<String, DetailedProgress>> = _detailedProgress
 
+    fun downloadKokoroDefault() {
+        val acquired = synchronized(activeModelDownloads) {
+            activeModelDownloads.add(KOKORO_MODEL_ID)
+        }
+        if (!acquired) {
+            DebugLogger.log("ModelDownloader: Download already in progress for $KOKORO_MODEL_ID, skipping duplicate request")
+            return
+        }
+        scope.launch {
+            try {
+                downloadKokoro()
+            } finally {
+                synchronized(activeModelDownloads) {
+                    activeModelDownloads.remove(KOKORO_MODEL_ID)
+                }
+            }
+        }
+    }
+
     fun downloadModel(model: Model) {
         val acquired = synchronized(activeModelDownloads) {
             activeModelDownloads.add(model.id)
@@ -58,6 +79,46 @@ class ModelDownloader(
                     activeModelDownloads.remove(model.id)
                 }
             }
+        }
+    }
+
+    private suspend fun downloadKokoro() {
+        val appContext = context.applicationContext
+        val manifest = ManifestProvider.kokoroV1()
+
+        if (Downloader.modelsAvailable(appContext, manifest)) {
+            DebugLogger.log("ModelDownloader: Kokoro already downloaded")
+            return
+        }
+
+        updateProgress(
+            modelId = KOKORO_MODEL_ID,
+            currentFile = "kokoro",
+            downloadedBytes = 0L,
+            totalBytes = manifest.files.sumOf { it.sizeBytes },
+            fraction = 0f
+        )
+        DebugLogger.log("ModelDownloader: Starting download of Kokoro")
+        try {
+            Downloader.ensureModels(appContext, manifest) { current ->
+                val fraction = if (current.totalBytes > 0L) {
+                    current.downloadedBytes.toFloat() / current.totalBytes.toFloat()
+                } else {
+                    0f
+                }
+                updateProgress(
+                    modelId = KOKORO_MODEL_ID,
+                    currentFile = current.fileId,
+                    downloadedBytes = current.downloadedBytes,
+                    totalBytes = current.totalBytes,
+                    fraction = fraction
+                )
+            }.getOrThrow()
+            DebugLogger.log("ModelDownloader: Download of Kokoro completed")
+        } catch (e: Exception) {
+            DebugLogger.log("ModelDownloader: Error downloading Kokoro: ${e.message}")
+        } finally {
+            clearProgress(KOKORO_MODEL_ID)
         }
     }
 
