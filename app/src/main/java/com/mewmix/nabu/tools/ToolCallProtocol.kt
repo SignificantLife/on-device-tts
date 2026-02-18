@@ -73,6 +73,17 @@ object ToolCallProtocol {
     }
 
     private fun parseToolCallJson(jsonText: String): ToolCall? {
+        parseToolCallJsonStrict(jsonText)?.let { return it }
+
+        val normalized = normalizeLikelyToolCallJson(jsonText)
+        if (normalized != jsonText) {
+            parseToolCallJsonStrict(normalized)?.let { return it }
+        }
+
+        return null
+    }
+
+    private fun parseToolCallJsonStrict(jsonText: String): ToolCall? {
         return runCatching {
             val json = JsonParser.parseString(jsonText).asJsonObject
             val toolName = sequenceOf(
@@ -91,6 +102,40 @@ object ToolCallProtocol {
 
             ToolCall(toolName = toolName, arguments = arguments)
         }.getOrNull()
+    }
+
+    /**
+     * Some local models emit almost-JSON tool payloads, for example:
+     * {name":"list_files",arguments={"path":"/sdcard"}}
+     * Normalize those into valid JSON before a second parse attempt.
+     */
+    private fun normalizeLikelyToolCallJson(rawText: String): String {
+        val candidate = extractJsonObject(rawText)
+        if (candidate.isBlank()) return rawText
+
+        return candidate
+            .replace(
+                Regex("([\\{,]\\s*)([A-Za-z_][A-Za-z0-9_]*)\"\\s*:"),
+                "$1\"$2\":"
+            )
+            .replace(
+                Regex("([\\{,]\\s*)([A-Za-z_][A-Za-z0-9_]*)\\s*="),
+                "$1\"$2\":"
+            )
+            .replace(
+                Regex("([\\{,]\\s*)([A-Za-z_][A-Za-z0-9_]*)\\s*:"),
+                "$1\"$2\":"
+            )
+    }
+
+    private fun extractJsonObject(text: String): String {
+        val start = text.indexOf('{')
+        val end = text.lastIndexOf('}')
+        return if (start >= 0 && end > start) {
+            text.substring(start, end + 1)
+        } else {
+            text.trim()
+        }
     }
 
     private fun jsonToMap(json: JsonObject): Map<String, Any> {

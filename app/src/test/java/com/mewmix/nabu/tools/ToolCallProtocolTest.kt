@@ -37,6 +37,21 @@ class ToolCallProtocolTest {
     }
 
     @Test
+    fun extractToolCall_parsesMalformedFencedJsonFromLocalModel() {
+        val text = """
+            ```json
+            {name":"list_files",arguments={"path": "/sdcard/Download"}}
+            ```
+        """.trimIndent()
+
+        val toolCall = ToolCallProtocol.extractToolCall(text)
+
+        assertNotNull(toolCall)
+        assertEquals("list_files", toolCall?.toolName)
+        assertEquals("/sdcard/Download", toolCall?.arguments?.get("path"))
+    }
+
+    @Test
     fun extractToolCall_returnsNullForNonToolText() {
         val toolCall = ToolCallProtocol.extractToolCall("Normal assistant response with no tool call")
         assertNull(toolCall)
