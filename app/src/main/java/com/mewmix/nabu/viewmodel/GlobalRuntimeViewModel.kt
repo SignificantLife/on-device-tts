@@ -7,6 +7,7 @@ import com.mewmix.nabu.data.Model
 import com.mewmix.nabu.data.ModelDownloader
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.ModelState
+import com.mewmix.nabu.data.TtsModelValidator
 import com.mewmix.nabu.data.ModelType
 import com.mewmix.nabu.data.UserPreferencesRepository
 import com.mewmix.nabu.kokoro.Downloader
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.io.File
 
 /**
  * Manages global application state including TTS runtime initialization
@@ -55,9 +57,9 @@ class GlobalRuntimeViewModel(application: Application) : AndroidViewModel(applic
                         _modelState.value = ModelState.Error("No Supertonic model configured")
                         return@launch
                     }
-                    if (!model.isDownloaded) {
+                    if (!isTtsModelReady(context, model.id)) {
                         val downloaded = downloader.ensureModelDownloaded(model)
-                        if (!downloaded) {
+                        if (!downloaded && !isTtsModelReady(context, model.id)) {
                             _modelState.value = ModelState.Error("Supertonic model download incomplete")
                             return@launch
                         }
@@ -71,9 +73,9 @@ class GlobalRuntimeViewModel(application: Application) : AndroidViewModel(applic
                         _modelState.value = ModelState.Error("Soprano model missing from allowlist")
                         return@launch
                     }
-                    if (!model.isDownloaded) {
+                    if (!isTtsModelReady(context, model.id)) {
                         val downloaded = downloader.ensureModelDownloaded(model)
-                        if (!downloaded) {
+                        if (!downloaded && !isTtsModelReady(context, model.id)) {
                             _modelState.value = ModelState.Error("Soprano model download incomplete")
                             return@launch
                         }
@@ -83,25 +85,22 @@ class GlobalRuntimeViewModel(application: Application) : AndroidViewModel(applic
                 }
                 else -> {
                     val canAutoDownload = SettingsManager.isKokoroAutoDownloadEnabled(context)
-                    val kokoroReady = if (canAutoDownload) {
-                        downloader.ensureKokoroDefaultDownloaded()
-                    } else {
-                        Downloader.modelsAvailable(context, OnnxRuntimeManager.currentManifest())
-                    }
-                    if (!kokoroReady) {
-                        _modelState.value = ModelState.Error("Voice models required")
-                        return@launch
-                    }
-
                     val result = OnnxRuntimeManager.initialize(
                         context,
-                        allowDownload = false,
+                        allowDownload = canAutoDownload,
                         onProgress = { progress -> _downloadProgress.value = progress }
                     )
-                    _modelState.value = result.fold(
-                        onSuccess = { ModelState.Ready },
-                        onFailure = { ModelState.Error(it?.message ?: "Runtime init failed") }
-                    )
+                    _modelState.value = if (result.isSuccess) {
+                        ModelState.Ready
+                    } else {
+                        val noModelsAvailable = !canAutoDownload &&
+                            !Downloader.modelsAvailable(context, OnnxRuntimeManager.currentManifest())
+                        if (noModelsAvailable) {
+                            ModelState.Error("Voice models required")
+                        } else {
+                            ModelState.Error(result.exceptionOrNull()?.message ?: "Runtime init failed")
+                        }
+                    }
                 }
             }
         }
@@ -119,6 +118,27 @@ class GlobalRuntimeViewModel(application: Application) : AndroidViewModel(applic
             SettingsManager.setSupertonicModelId(context, selected.id)
         }
         return selected
+    }
+
+    private fun isTtsModelReady(context: Application, modelId: String): Boolean {
+        val modelRoot = File(context.filesDir, "models")
+        val targetDir = File(modelRoot, modelId)
+        val partialDir = File(modelRoot, "${modelId}_partial")
+        val validInTarget = TtsModelValidator.hasAllRequiredFiles(modelId, targetDir)
+        if (validInTarget) return true
+
+        val validInPartial = TtsModelValidator.hasAllRequiredFiles(modelId, partialDir)
+        if (!validInPartial) return false
+
+        return runCatching {
+            if (targetDir.exists()) targetDir.deleteRecursively()
+            if (!partialDir.renameTo(targetDir)) {
+                partialDir.copyRecursively(targetDir, overwrite = true)
+                partialDir.deleteRecursively()
+            }
+            TtsModelValidator.hasAllRequiredFiles(modelId, targetDir) ||
+                TtsModelValidator.hasAllRequiredFiles(modelId, partialDir)
+        }.getOrDefault(false)
     }
     
     fun updateBenchmarkStat(label: String, value: Float) {

@@ -147,20 +147,55 @@ class ModelDownloader(
         val headers = authHeaders(token)
         val baseUrl = ttsBaseUrl(model)
 
-        val allPresent = hasAllFiles(model.id, targetDir, fileSpecs)
-        if (allPresent) {
+        val targetComplete = hasAllFiles(model.id, targetDir, fileSpecs)
+        if (targetComplete) {
             model.isDownloaded = true
             model.hasPartial = false
             DebugLogger.log("ModelDownloader: ${model.name} already downloaded")
             return
         }
 
+        val partialComplete = hasAllFiles(model.id, partialDir, fileSpecs)
+        if (partialComplete) {
+            if (targetDir.exists()) targetDir.deleteRecursively()
+            if (!partialDir.renameTo(targetDir)) {
+                partialDir.copyRecursively(targetDir, overwrite = true)
+                partialDir.deleteRecursively()
+            }
+            model.isDownloaded = hasAllFiles(model.id, targetDir, fileSpecs)
+            model.hasPartial = false
+            if (model.isDownloaded) {
+                DebugLogger.log("ModelDownloader: Promoted complete partial bundle for ${model.name}")
+                return
+            }
+        }
+
         val destinationRoot = when {
+            targetDir.exists() && partialDir.exists() -> {
+                if (countValidFiles(model.id, partialDir, fileSpecs) > countValidFiles(model.id, targetDir, fileSpecs)) {
+                    partialDir
+                } else {
+                    targetDir
+                }
+            }
             targetDir.exists() -> targetDir
             partialDir.exists() -> partialDir
             else -> {
                 partialDir.mkdirs()
                 partialDir
+            }
+        }
+        val fallbackRoot = if (destinationRoot == targetDir) partialDir else targetDir
+        if (fallbackRoot.exists()) {
+            fileSpecs.forEach { spec ->
+                val destFile = File(destinationRoot, spec.localPath)
+                if (!TtsModelValidator.isFileValid(model.id, spec.localPath, destFile)) {
+                    val fallbackFile = File(fallbackRoot, spec.localPath)
+                    if (TtsModelValidator.isFileValid(model.id, spec.localPath, fallbackFile)) {
+                        destFile.parentFile?.mkdirs()
+                        fallbackFile.copyTo(destFile, overwrite = true)
+                    }
+                }
             }
         }
         val missingSpecs = fileSpecs.filter { spec ->
@@ -370,7 +405,21 @@ class ModelDownloader(
     private fun isModelDownloadedOnDisk(model: Model): Boolean {
         val modelDir = File(context.filesDir, "models")
         return if (model.type == ModelType.TTS) {
-            hasAllFiles(model.id, File(modelDir, model.id), ttsFileSpecs(model))
+            val targetDir = File(modelDir, model.id)
+            val partialDir = File(modelDir, "${model.id}_partial")
+            val specs = ttsFileSpecs(model)
+            if (hasAllFiles(model.id, targetDir, specs)) {
+                true
+            } else if (hasAllFiles(model.id, partialDir, specs)) {
+                if (targetDir.exists()) targetDir.deleteRecursively()
+                if (!partialDir.renameTo(targetDir)) {
+                    partialDir.copyRecursively(targetDir, overwrite = true)
+                    partialDir.deleteRecursively()
+                }
+                hasAllFiles(model.id, targetDir, specs) || hasAllFiles(model.id, partialDir, specs)
+            } else {
+                false
+            }
         } else {
             val extension = llmExtension(model)
             isLlmArtifactValid(File(modelDir, "${model.id}.$extension"))
@@ -425,6 +474,13 @@ class ModelDownloader(
     private fun hasAllFiles(modelId: String, rootDir: File, specs: List<DownloadFileSpec>): Boolean {
         if (!rootDir.exists()) return false
         return specs.all { spec ->
+            TtsModelValidator.isFileValid(modelId, spec.localPath, File(rootDir, spec.localPath))
+        }
+    }
+
+    private fun countValidFiles(modelId: String, rootDir: File, specs: List<DownloadFileSpec>): Int {
+        if (!rootDir.exists()) return 0
+        return specs.count { spec ->
             TtsModelValidator.isFileValid(modelId, spec.localPath, File(rootDir, spec.localPath))
         }
     }

@@ -57,11 +57,21 @@ class ModelManager(private val context: Context) {
 
             if (model.type == ModelType.TTS) {
                 val ttsDir = File(modelDir, model.id)
-                val downloaded = TtsModelValidator.hasAllRequiredFiles(model.id, ttsDir)
-
-                model.isDownloaded = downloaded
-                // Partial check for TTS is simplified or we can check for a temp folder
                 val partialDir = File(modelDir, "${model.id}_partial")
+                val downloadedInTarget = TtsModelValidator.hasAllRequiredFiles(model.id, ttsDir)
+                val downloadedInPartial = TtsModelValidator.hasAllRequiredFiles(model.id, partialDir)
+
+                if (!downloadedInTarget && downloadedInPartial) {
+                    runCatching {
+                        if (ttsDir.exists()) ttsDir.deleteRecursively()
+                        if (!partialDir.renameTo(ttsDir)) {
+                            partialDir.copyRecursively(ttsDir, overwrite = true)
+                            partialDir.deleteRecursively()
+                        }
+                    }
+                }
+                model.isDownloaded = TtsModelValidator.hasAllRequiredFiles(model.id, ttsDir) ||
+                    TtsModelValidator.hasAllRequiredFiles(model.id, partialDir)
                 model.hasPartial = !model.isDownloaded && (partialDir.exists() || ttsDir.exists())
             } else {
                 val taskFile = File(modelDir, "${model.id}.task")
