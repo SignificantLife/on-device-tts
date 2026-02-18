@@ -16,7 +16,7 @@ interface OAuthManager {
      * Handles the callback intent from the OAuth provider (e.g. redirect URI).
      * @return true if the intent was handled, false otherwise.
      */
-    fun handleCallback(intent: Intent): Boolean
+    suspend fun handleCallback(context: Context, intent: Intent): Boolean
 
     /**
      * Returns the current access token if logged in.

@@ -1,6 +1,7 @@
 package com.mewmix.nabu.auth
 
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -9,8 +10,10 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.Text
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.lifecycleScope
 import com.mewmix.nabu.utils.DebugLogger
 import com.mewmix.nabu.MainActivity
+import kotlinx.coroutines.launch
 
 class OAuthCallbackActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -20,34 +23,40 @@ class OAuthCallbackActivity : ComponentActivity() {
         val data = intent.data
         DebugLogger.log("OAuthCallbackActivity: Received intent: $data")
 
-        var handled = false
-        // Determine which authenticator to use based on URI
-        if (data != null) {
-            val uriString = data.toString()
-            if (uriString.contains("callback/google")) {
-                handled = GeminiAuthenticator().handleCallback(intent)
-            } else if (uriString.contains("callback/codex")) {
-                handled = CodexAuthenticator().handleCallback(intent)
-            }
-        }
-
-        setContent {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                if (handled) {
-                    Text("Authentication successful! You can close this window.")
-                } else {
-                    Text("Authentication failed or cancelled.")
+        lifecycleScope.launch {
+            var handled = false
+            if (data != null) {
+                when (resolveProvider(data)) {
+                    "google" -> handled = GeminiAuthenticator().handleCallback(this@OAuthCallbackActivity, intent)
+                    "codex" -> handled = CodexAuthenticator().handleCallback(this@OAuthCallbackActivity, intent)
+                    else -> DebugLogger.log("OAuthCallbackActivity: Ignoring unsupported callback URI: $data")
                 }
             }
-        }
 
-        // Return to main app after a short delay or immediately
-        // For now, let's just finish and bring main activity to front
-        if (handled) {
-            val mainIntent = Intent(this, MainActivity::class.java)
-            mainIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
-            startActivity(mainIntent)
-            finish()
+            setContent {
+                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                    if (handled) {
+                        Text("Authentication successful! You can close this window.")
+                    } else {
+                        Text("Authentication failed or cancelled.")
+                    }
+                }
+            }
+
+            if (handled) {
+                val mainIntent = Intent(this@OAuthCallbackActivity, MainActivity::class.java)
+                mainIntent.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+                startActivity(mainIntent)
+                finish()
+            }
         }
+    }
+
+    private fun resolveProvider(uri: Uri): String? {
+        if (uri.scheme != "nabu" || uri.host != "auth") return null
+        val segments = uri.pathSegments
+        if (segments.size < 2) return null
+        if (segments[0] != "callback") return null
+        return segments[1]
     }
 }

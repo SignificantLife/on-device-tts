@@ -8,7 +8,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.io.File
 
@@ -19,6 +21,8 @@ class ModelDownloader(
     companion object {
         const val KOKORO_MODEL_ID = "kokoro-default"
         private val activeModelDownloads = mutableSetOf<String>()
+        private val sharedProgress = MutableStateFlow<Map<String, Float>>(emptyMap())
+        private val sharedDetailedProgress = MutableStateFlow<Map<String, DetailedProgress>>(emptyMap())
     }
 
     data class DetailedProgress(
@@ -34,11 +38,8 @@ class ModelDownloader(
     )
 
     private val scope = CoroutineScope(Dispatchers.IO)
-    private val _progress = MutableStateFlow<Map<String, Float>>(emptyMap())
-    val progress: StateFlow<Map<String, Float>> = _progress
-
-    private val _detailedProgress = MutableStateFlow<Map<String, DetailedProgress>>(emptyMap())
-    val detailedProgress: StateFlow<Map<String, DetailedProgress>> = _detailedProgress
+    val progress: StateFlow<Map<String, Float>> = sharedProgress.asStateFlow()
+    val detailedProgress: StateFlow<Map<String, DetailedProgress>> = sharedDetailedProgress.asStateFlow()
 
     private fun tryAcquireDownload(modelId: String): Boolean =
         synchronized(activeModelDownloads) { activeModelDownloads.add(modelId) }
@@ -440,28 +441,33 @@ class ModelDownloader(
         fraction: Float
     ) {
         val safeFraction = fraction.coerceIn(0f, 1f)
-        _progress.value = _progress.value.toMutableMap().apply {
-            put(modelId, safeFraction)
+        sharedProgress.update { current ->
+            current + (modelId to safeFraction)
         }
-        _detailedProgress.value = _detailedProgress.value.toMutableMap().apply {
-            put(
-                modelId,
-                DetailedProgress(
-                    currentFile = currentFile,
-                    downloadedBytes = downloadedBytes,
-                    totalBytes = totalBytes,
-                    fraction = safeFraction
-                )
-            )
+        sharedDetailedProgress.update { current ->
+            current + (modelId to DetailedProgress(
+                currentFile = currentFile,
+                downloadedBytes = downloadedBytes,
+                totalBytes = totalBytes,
+                fraction = safeFraction
+            ))
         }
     }
 
     private fun clearProgress(modelId: String) {
-        _progress.value = _progress.value.toMutableMap().apply {
-            remove(modelId)
+        sharedProgress.update { current ->
+            if (modelId in current) {
+                current - modelId
+            } else {
+                current
+            }
         }
-        _detailedProgress.value = _detailedProgress.value.toMutableMap().apply {
-            remove(modelId)
+        sharedDetailedProgress.update { current ->
+            if (modelId in current) {
+                current - modelId
+            } else {
+                current
+            }
         }
     }
 }

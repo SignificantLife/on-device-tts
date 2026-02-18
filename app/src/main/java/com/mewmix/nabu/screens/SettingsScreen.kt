@@ -35,6 +35,8 @@ import com.mewmix.nabu.utils.getAppVersion
 import com.mewmix.nabu.api.ApiServerManager
 import com.mewmix.nabu.auth.GeminiAuthenticator
 import com.mewmix.nabu.auth.CodexAuthenticator
+import com.mewmix.nabu.auth.GeminiApiClient
+import com.mewmix.nabu.auth.CodexApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -89,6 +91,16 @@ fun SettingsScreen() {
     var updateStatus by remember { mutableStateOf(UpdateChecker.cachedStatus(context)) }
     var checkingForUpdate by remember { mutableStateOf(false) }
     var updateError by remember { mutableStateOf<String?>(null) }
+    val geminiAuth = remember { GeminiAuthenticator() }
+    val codexAuth = remember { CodexAuthenticator() }
+    val geminiClient = remember { GeminiApiClient(geminiAuth) }
+    val codexClient = remember { CodexApiClient(codexAuth) }
+    var geminiConnected by remember { mutableStateOf(geminiAuth.hasStoredSession(context)) }
+    var codexConnected by remember { mutableStateOf(codexAuth.hasStoredSession(context)) }
+    var testingGemini by remember { mutableStateOf(false) }
+    var testingCodex by remember { mutableStateOf(false) }
+    var geminiStatus by remember { mutableStateOf<String?>(null) }
+    var codexStatus by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(runtime, ttsEngine) {
         if (ttsEngine == "kokoro") {
@@ -103,6 +115,8 @@ fun SettingsScreen() {
     }
     LaunchedEffect(Unit) {
         updateStatus = withContext(Dispatchers.IO) { UpdateChecker.cachedStatus(context) }
+        geminiConnected = geminiAuth.hasStoredSession(context.applicationContext)
+        codexConnected = codexAuth.hasStoredSession(context.applicationContext)
     }
 
     PanelBox(
@@ -481,18 +495,116 @@ fun SettingsScreen() {
                 style = MaterialTheme.typography.titleMedium
             )
 
+            Text(
+                text = if (geminiConnected) "Gemini: Connected" else "Gemini: Not connected",
+                style = MaterialTheme.typography.bodySmall
+            )
             Button(
-                onClick = { GeminiAuthenticator().initiateLogin(context) },
+                onClick = { geminiAuth.initiateLogin(context) },
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Connect Gemini Account")
+                Text(if (geminiConnected) "Reconnect Gemini Account" else "Connect Gemini Account")
             }
 
             Button(
-                onClick = { CodexAuthenticator().initiateLogin(context) },
+                onClick = {
+                    scope.launch {
+                        testingGemini = true
+                        geminiStatus = null
+                        val result = geminiClient.sendPrompt(
+                            context = context.applicationContext,
+                            prompt = "Reply with: Gemini connection OK."
+                        )
+                        geminiStatus = result.fold(
+                            onSuccess = { "Gemini response: $it" },
+                            onFailure = { "Gemini call failed: ${it.message}" }
+                        )
+                        geminiConnected = geminiAuth.hasStoredSession(context.applicationContext)
+                        testingGemini = false
+                    }
+                },
+                enabled = geminiConnected && !testingGemini,
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text("Connect Codex (OpenAI) Account")
+                Text(if (testingGemini) "Testing Gemini..." else "Test Gemini Call")
+            }
+
+            Button(
+                onClick = {
+                    geminiAuth.logout(context.applicationContext)
+                    geminiConnected = false
+                    geminiStatus = "Gemini disconnected."
+                },
+                enabled = geminiConnected,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Disconnect Gemini")
+            }
+            geminiStatus?.let { status ->
+                Text(
+                    text = status,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            Text(
+                text = if (codexConnected) "Codex: Connected" else "Codex: Not connected",
+                style = MaterialTheme.typography.bodySmall
+            )
+            Button(
+                onClick = { codexAuth.initiateLogin(context) },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (codexConnected) "Reconnect Codex Account" else "Connect Codex (OpenAI) Account")
+            }
+
+            Button(
+                onClick = {
+                    scope.launch {
+                        testingCodex = true
+                        codexStatus = null
+                        val responseResult = codexClient.sendPrompt(
+                            context = context.applicationContext,
+                            prompt = "Reply with: Codex connection OK."
+                        )
+                        codexStatus = responseResult.fold(
+                            onSuccess = { "Codex response: $it" },
+                            onFailure = { callError ->
+                                val usage = codexClient.fetchUsageSummary(context.applicationContext)
+                                usage.fold(
+                                    onSuccess = { "Codex usage reachable: $it (prompt failed: ${callError.message})" },
+                                    onFailure = { "Codex call failed: ${callError.message}" }
+                                )
+                            }
+                        )
+                        codexConnected = codexAuth.hasStoredSession(context.applicationContext)
+                        testingCodex = false
+                    }
+                },
+                enabled = codexConnected && !testingCodex,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (testingCodex) "Testing Codex..." else "Test Codex Call")
+            }
+
+            Button(
+                onClick = {
+                    codexAuth.logout(context.applicationContext)
+                    codexConnected = false
+                    codexStatus = "Codex disconnected."
+                },
+                enabled = codexConnected,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Disconnect Codex")
+            }
+            codexStatus?.let { status ->
+                Text(
+                    text = status,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
             }
 
             HorizontalDivider()

@@ -4,52 +4,169 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import com.mewmix.nabu.utils.DebugLogger
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import org.json.JSONObject
 
 class CodexAuthenticator : OAuthManager {
-    // Placeholder configuration.
-    private val CLIENT_ID = "YOUR_CODEX_CLIENT_ID"
-    private val REDIRECT_URI = "nabu://auth/callback/codex"
-    private val AUTH_URL = "https://github.com/login/oauth/authorize" // Assuming GitHub Copilot flow
-    private val SCOPES = "read:user"
+    companion object {
+        const val PROVIDER_ID = "codex"
+    }
+
+    // Matches Codex CLI OAuth defaults from openai/codex.
+    private val clientId = "app_EMoamEEZ73f0CkXaXp7hrann"
+    private val redirectUri = "nabu://auth/callback/codex"
+    private val authUrl = "https://auth.openai.com/oauth/authorize"
+    private val tokenUrl = "https://auth.openai.com/oauth/token"
+    private val scopes = "openid profile email offline_access"
 
     override fun initiateLogin(context: Context) {
-        val authUri = Uri.parse(AUTH_URL).buildUpon()
-            .appendQueryParameter("client_id", CLIENT_ID)
-            .appendQueryParameter("redirect_uri", REDIRECT_URI)
-            .appendQueryParameter("scope", SCOPES)
+        val appContext = context.applicationContext
+        val session = OAuthSessionStore.createSession(appContext, PROVIDER_ID)
+
+        val authUri = Uri.parse(authUrl).buildUpon()
+            .appendQueryParameter("response_type", "code")
+            .appendQueryParameter("client_id", clientId)
+            .appendQueryParameter("redirect_uri", redirectUri)
+            .appendQueryParameter("scope", scopes)
+            .appendQueryParameter("state", session.state)
+            .appendQueryParameter("code_challenge", OAuthSessionStore.buildCodeChallenge(session.codeVerifier))
+            .appendQueryParameter("code_challenge_method", "S256")
+            .appendQueryParameter("id_token_add_organizations", "true")
+            .appendQueryParameter("codex_cli_simplified_flow", "true")
             .build()
 
         DebugLogger.log("CodexAuthenticator: Initiating login with URL: $authUri")
-        val intent = Intent(Intent.ACTION_VIEW, authUri)
-        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val intent = Intent(Intent.ACTION_VIEW, authUri).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
         context.startActivity(intent)
     }
 
-    override fun handleCallback(intent: Intent): Boolean {
+    override suspend fun handleCallback(context: Context, intent: Intent): Boolean {
         val data = intent.data ?: return false
-        if (data.toString().startsWith(REDIRECT_URI)) {
-            val code = data.getQueryParameter("code")
-            if (code != null) {
-                DebugLogger.log("CodexAuthenticator: Received auth code: $code")
-                // TODO: Exchange code for token
-                return true
-            }
-            val error = data.getQueryParameter("error")
-            if (error != null) {
-                DebugLogger.log("CodexAuthenticator: Auth error: $error")
-                return true
-            }
+        if (!isExpectedCallback(data)) return false
+
+        val appContext = context.applicationContext
+        val error = data.getQueryParameter("error")
+        if (!error.isNullOrBlank()) {
+            OAuthSessionStore.clearSession(appContext, PROVIDER_ID)
+            DebugLogger.log("CodexAuthenticator: Auth error: $error")
+            return true
         }
-        return false
+
+        val session = OAuthSessionStore.consumeIfValid(
+            context = appContext,
+            providerId = PROVIDER_ID,
+            state = data.getQueryParameter("state")
+        ) ?: run {
+            DebugLogger.log("CodexAuthenticator: Callback rejected due to invalid/missing OAuth state")
+            return false
+        }
+
+        val code = data.getQueryParameter("code")
+        if (code.isNullOrBlank()) {
+            DebugLogger.log("CodexAuthenticator: Callback missing code")
+            return false
+        }
+
+        val tokenResponse = withContext(Dispatchers.IO) {
+            OAuthHttpClient.postForm(
+                url = tokenUrl,
+                fields = mapOf(
+                    "grant_type" to "authorization_code",
+                    "client_id" to clientId,
+                    "code" to code,
+                    "redirect_uri" to redirectUri,
+                    "code_verifier" to session.codeVerifier
+                )
+            )
+        }
+
+        return tokenResponse.fold(
+            onSuccess = { json ->
+                val accessToken = json.optString("access_token").ifBlank { null }
+                if (accessToken.isNullOrBlank()) {
+                    DebugLogger.log("CodexAuthenticator: Token exchange returned no access token")
+                    false
+                } else {
+                    val idToken = json.optString("id_token").ifBlank { null }
+                    val accountId = JwtUtils.codexAccountId(accessToken, idToken)
+                    OAuthTokenStore.save(
+                        context = appContext,
+                        providerId = PROVIDER_ID,
+                        accessToken = accessToken,
+                        refreshToken = json.optString("refresh_token").ifBlank { null },
+                        idToken = idToken,
+                        expiresInSeconds = json.optLong("expires_in").takeIf { it > 0L },
+                        accountId = accountId
+                    )
+                    DebugLogger.log("CodexAuthenticator: OAuth token exchange complete")
+                    true
+                }
+            },
+            onFailure = { errorThrowable ->
+                DebugLogger.log("CodexAuthenticator: Token exchange failed: ${errorThrowable.message}")
+                false
+            }
+        )
     }
 
     override fun getAccessToken(context: Context): String? {
-        // TODO: Retrieve stored token
-        return null
+        val tokens = OAuthTokenStore.load(context.applicationContext, PROVIDER_ID) ?: return null
+        return if (!tokens.isExpired()) tokens.accessToken else null
+    }
+
+    fun hasStoredSession(context: Context): Boolean =
+        OAuthTokenStore.load(context.applicationContext, PROVIDER_ID) != null
+
+    fun getAccountId(context: Context): String? =
+        OAuthTokenStore.load(context.applicationContext, PROVIDER_ID)?.accountId
+
+    suspend fun getValidAccessToken(context: Context): String? {
+        val appContext = context.applicationContext
+        val tokens = OAuthTokenStore.load(appContext, PROVIDER_ID) ?: return null
+        if (!tokens.isExpired()) return tokens.accessToken
+        val refreshToken = tokens.refreshToken ?: return null
+
+        val payload = JSONObject()
+            .put("client_id", clientId)
+            .put("grant_type", "refresh_token")
+            .put("refresh_token", refreshToken)
+            .put("scope", "openid profile email")
+        val refreshed = withContext(Dispatchers.IO) {
+            OAuthHttpClient.postJson(tokenUrl, payload)
+        }
+        return refreshed.fold(
+            onSuccess = { json ->
+                val accessToken = json.optString("access_token").ifBlank { null } ?: return@fold null
+                val newRefreshToken = json.optString("refresh_token").ifBlank { null } ?: refreshToken
+                val newIdToken = json.optString("id_token").ifBlank { null } ?: tokens.idToken
+                val accountId = JwtUtils.codexAccountId(accessToken, newIdToken) ?: tokens.accountId
+                OAuthTokenStore.save(
+                    context = appContext,
+                    providerId = PROVIDER_ID,
+                    accessToken = accessToken,
+                    refreshToken = newRefreshToken,
+                    idToken = newIdToken,
+                    expiresInSeconds = json.optLong("expires_in").takeIf { it > 0L },
+                    accountId = accountId
+                )
+                accessToken
+            },
+            onFailure = { null }
+        )
     }
 
     override fun logout(context: Context) {
-        // TODO: Clear stored token
+        val appContext = context.applicationContext
+        OAuthSessionStore.clearSession(appContext, PROVIDER_ID)
+        OAuthTokenStore.clear(appContext, PROVIDER_ID)
         DebugLogger.log("CodexAuthenticator: Logout")
     }
+
+    private fun isExpectedCallback(uri: Uri): Boolean =
+        uri.scheme == "nabu" &&
+            uri.host == "auth" &&
+            uri.path == "/callback/codex"
 }
