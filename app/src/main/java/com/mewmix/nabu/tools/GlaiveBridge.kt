@@ -15,6 +15,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 
 object GlaiveBridge {
     private const val GLAIVE_PACKAGE = "com.mewmix.glaive"
+    private const val GLAIVE_ACCESS_PERMISSION = "com.mewmix.glaive.permission.ACCESS_TOOLS"
     private const val ACTION_EXECUTE_TOOL = "com.mewmix.glaive.ACTION_EXECUTE_TOOL"
     private const val EXTRA_TOOL_NAME = "TOOL_NAME"
     private const val EXTRA_TOOL_PARAMS = "TOOL_PARAMS"
@@ -39,6 +40,17 @@ object GlaiveBridge {
     suspend fun executeTool(context: Context, call: ToolCall): ToolResult = suspendCancellableCoroutine { continuation ->
         if (!isInstalled(context)) {
             continuation.resume(ToolResult(call.toolName, "Glaive app is not installed.", true))
+            return@suspendCancellableCoroutine
+        }
+        if (!hasBridgePermission(context)) {
+            continuation.resume(
+                ToolResult(
+                    call.toolName,
+                    "Nabu is missing Glaive bridge permission ($GLAIVE_ACCESS_PERMISSION). " +
+                        "Update/reinstall both Nabu and Glaive from matching builds, then retry.",
+                    true
+                )
+            )
             return@suspendCancellableCoroutine
         }
 
@@ -70,6 +82,17 @@ object GlaiveBridge {
                 putExtra(EXTRA_INTERNAL_RESULT_RECEIVER, receiver)
             }
             context.startActivity(proxyIntent)
+        } catch (e: SecurityException) {
+            if (continuation.isActive) {
+                continuation.resume(
+                    ToolResult(
+                        call.toolName,
+                        "Bridge launch denied: ${e.message}. " +
+                            "Open Glaive once, then ensure both apps are installed from matching signed builds.",
+                        true
+                    )
+                )
+            }
         } catch (e: Exception) {
             if (continuation.isActive) {
                 continuation.resume(ToolResult(call.toolName, "Error executing tool: ${e.message}", true))
@@ -127,4 +150,8 @@ object GlaiveBridge {
         intent?.getStringExtra(EXTRA_INTERNAL_TOOL_PARAMS)
 
     internal fun relayReceiverExtraName(): String = EXTRA_INTERNAL_RESULT_RECEIVER
+
+    private fun hasBridgePermission(context: Context): Boolean {
+        return context.checkSelfPermission(GLAIVE_ACCESS_PERMISSION) == PackageManager.PERMISSION_GRANTED
+    }
 }
