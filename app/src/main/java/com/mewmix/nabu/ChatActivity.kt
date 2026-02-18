@@ -44,20 +44,27 @@ class ChatActivity : ComponentActivity() {
 
         val initialPrompt = intent.getStringExtra(EXTRA_INITIAL_PROMPT)
 
-        lifecycleScope.launch {
-            val initResult = withContext(Dispatchers.IO) {
-                OnnxRuntimeManager.initialize(applicationContext)
+        lifecycleScope.launch(Dispatchers.IO) {
+            if (SettingsManager.getTtsEngine(applicationContext) == "kokoro") {
+                val initResult = OnnxRuntimeManager.initialize(
+                    applicationContext,
+                    allowDownload = SettingsManager.isKokoroAutoDownloadEnabled(applicationContext)
+                )
+                if (initResult.isFailure) {
+                    val message = initResult.exceptionOrNull()?.message ?: "Kokoro runtime unavailable"
+                    DebugLogger.log("ChatActivity: Kokoro warm-up failed: $message")
+                    withContext(Dispatchers.Main) {
+                        Toast.makeText(
+                            this@ChatActivity,
+                            "Kokoro models unavailable: $message",
+                            Toast.LENGTH_LONG
+                        ).show()
+                    }
+                }
             }
-            if (initResult.isFailure) {
-                Toast.makeText(
-                    this@ChatActivity,
-                    "Kokoro models unavailable: ${initResult.exceptionOrNull()?.message}",
-                    Toast.LENGTH_LONG
-                ).show()
-                finish()
-                return@launch
-            }
+        }
 
+        lifecycleScope.launch {
             val modelManager = ModelManager(applicationContext)
             val downloaded = modelManager.models.filter { it.isDownloaded && it.type != com.mewmix.nabu.data.ModelType.TTS }
 
