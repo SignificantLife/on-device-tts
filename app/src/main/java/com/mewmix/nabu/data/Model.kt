@@ -1,11 +1,15 @@
 package com.mewmix.nabu.data
 
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+
 enum class ModelType {
     LLM,
     TTS
 }
 
-data class Model(
+class Model(
     val id: String,
     val name: String,
     val description: String,
@@ -13,7 +17,11 @@ data class Model(
     val downloadUrl: String,
     val gated: Boolean,
     val type: ModelType = ModelType.LLM,
-    var isDownloaded: Boolean = false,
-    var hasPartial: Boolean = false,
-    var backend: String = "mediapipe"
-)
+    initialIsDownloaded: Boolean = false,
+    initialHasPartial: Boolean = false,
+    initialBackend: String = "mediapipe"
+) {
+    var isDownloaded by mutableStateOf(initialIsDownloaded)
+    var hasPartial by mutableStateOf(initialHasPartial)
+    var backend by mutableStateOf(initialBackend)
+}

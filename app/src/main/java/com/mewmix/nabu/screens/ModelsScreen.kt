@@ -129,8 +129,8 @@ fun ModelsScreen(
                     repo = "",
                     downloadUrl = "",
                     gated = false,
-                    isDownloaded = true,
-                    backend = backend
+                    initialIsDownloaded = true,
+                    initialBackend = backend
                 )
                 modelManager.addLocalModel(model)
                 DebugLogger.log("ModelsScreen: Imported $name")

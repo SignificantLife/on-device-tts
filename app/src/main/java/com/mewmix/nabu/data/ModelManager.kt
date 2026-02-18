@@ -113,8 +113,8 @@ class ModelManager(private val context: Context) {
                         repo = "",
                         downloadUrl = "",
                         gated = false,
-                        isDownloaded = true,
-                        backend = backend
+                        initialIsDownloaded = true,
+                        initialBackend = backend
                     )
                 )
             }
