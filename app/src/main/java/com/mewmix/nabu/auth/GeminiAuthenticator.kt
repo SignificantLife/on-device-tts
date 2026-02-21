@@ -5,18 +5,25 @@ import android.content.Intent
 import android.net.Uri
 import com.mewmix.nabu.utils.DebugLogger
 import com.mewmix.nabu.utils.SettingsManager
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 class GeminiAuthenticator : OAuthManager {
     companion object {
         const val PROVIDER_ID = "google"
+        private const val LOOPBACK_TIMEOUT_MS = 5 * 60 * 1000L
     }
 
     private val defaultRedirectUri = "nabu://auth/callback/google"
     private val authUrl = "https://accounts.google.com/o/oauth2/v2/auth"
     private val tokenUrl = "https://oauth2.googleapis.com/token"
-    private val scopes = "https://www.googleapis.com/auth/cloud-platform"
+    private val scopes =
+        "openid profile email https://www.googleapis.com/auth/generative-language.retriever"
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile private var activeLoopback: OAuthLoopbackReceiver.Session? = null
 
     override fun initiateLogin(context: Context) {
         val appContext = context.applicationContext
@@ -25,7 +32,16 @@ class GeminiAuthenticator : OAuthManager {
             DebugLogger.log("GeminiAuthenticator: Missing OAuth client ID. Configure Gemini OAuth Client ID in Settings.")
             return
         }
-        val redirectUri = SettingsManager.getGeminiOAuthRedirectUri(appContext, defaultRedirectUri)
+
+        activeLoopback?.close()
+        val configuredRedirectUri = SettingsManager.getGeminiOAuthRedirectUri(appContext, defaultRedirectUri)
+        val loopback = if (shouldUseLoopback(configuredRedirectUri)) {
+            OAuthLoopbackReceiver.start("/auth/callback")
+        } else {
+            null
+        }
+        activeLoopback = loopback
+        val redirectUri = loopback?.redirectUri ?: configuredRedirectUri
         val session = OAuthSessionStore.createSession(appContext, PROVIDER_ID, redirectUri)
 
         val authUri = Uri.parse(authUrl).buildUpon()
@@ -45,18 +61,39 @@ class GeminiAuthenticator : OAuthManager {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
         context.startActivity(intent)
+
+        if (loopback != null) {
+            scope.launch {
+                val callbackUri = loopback.awaitCallback(LOOPBACK_TIMEOUT_MS)
+                if (callbackUri != null) {
+                    val handled = handleCallbackUri(appContext, callbackUri, clientId)
+                    DebugLogger.log("GeminiAuthenticator: Loopback callback handled=$handled")
+                } else {
+                    OAuthSessionStore.clearSession(appContext, PROVIDER_ID)
+                    DebugLogger.log("GeminiAuthenticator: Loopback callback timed out")
+                }
+                if (activeLoopback === loopback) {
+                    activeLoopback = null
+                }
+                loopback.close()
+            }
+        }
     }
 
     override suspend fun handleCallback(context: Context, intent: Intent): Boolean {
         val data = intent.data ?: return false
-        if (!isExpectedCallback(data)) return false
-
         val appContext = context.applicationContext
         val clientId = SettingsManager.getGeminiOAuthClientId(appContext)
         if (clientId.isBlank()) {
             DebugLogger.log("GeminiAuthenticator: Callback received but Gemini OAuth client ID is missing")
             return false
         }
+        return handleCallbackUri(appContext, data, clientId)
+    }
+
+    private suspend fun handleCallbackUri(appContext: Context, data: Uri, clientId: String): Boolean {
+        if (!isExpectedCallback(data)) return false
+
         val error = data.getQueryParameter("error")
         if (!error.isNullOrBlank()) {
             OAuthSessionStore.clearSession(appContext, PROVIDER_ID)
@@ -78,10 +115,7 @@ class GeminiAuthenticator : OAuthManager {
             DebugLogger.log("GeminiAuthenticator: Callback missing code")
             return false
         }
-        val redirectUri = session.redirectUri ?: SettingsManager.getGeminiOAuthRedirectUri(
-            appContext,
-            defaultRedirectUri
-        )
+        val redirectUri = session.redirectUri ?: defaultRedirectUri
 
         val tokenResponse = withContext(Dispatchers.IO) {
             OAuthHttpClient.postForm(
@@ -169,13 +203,26 @@ class GeminiAuthenticator : OAuthManager {
 
     override fun logout(context: Context) {
         val appContext = context.applicationContext
+        activeLoopback?.close()
+        activeLoopback = null
         OAuthSessionStore.clearSession(appContext, PROVIDER_ID)
         OAuthTokenStore.clear(appContext, PROVIDER_ID)
         DebugLogger.log("GeminiAuthenticator: Logout")
     }
 
     private fun isExpectedCallback(uri: Uri): Boolean =
-        uri.scheme == "nabu" &&
+        (uri.scheme == "nabu" &&
             uri.host == "auth" &&
-            (uri.path == "/callback/google" || uri.path == "/auth/callback")
+            (uri.path == "/callback/google" || uri.path == "/auth/callback")) ||
+            ((uri.scheme == "http" || uri.scheme == "https") &&
+                (uri.host == "127.0.0.1" || uri.host == "localhost") &&
+                uri.path == "/auth/callback")
+
+    private fun shouldUseLoopback(redirectUri: String): Boolean {
+        val normalized = redirectUri.trim()
+        if (normalized.isBlank()) return true
+        if (normalized.equals(defaultRedirectUri, ignoreCase = true)) return true
+        return normalized.startsWith("http://127.0.0.1", ignoreCase = true) ||
+            normalized.startsWith("http://localhost", ignoreCase = true)
+    }
 }

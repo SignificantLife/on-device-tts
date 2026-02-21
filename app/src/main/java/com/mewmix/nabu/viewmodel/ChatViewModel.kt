@@ -6,6 +6,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mewmix.nabu.chat.ChatMessage
 import com.mewmix.nabu.chat.LlmBackend
+import com.mewmix.nabu.chat.CodexOAuthBackend
+import com.mewmix.nabu.chat.GeminiOAuthBackend
 import com.mewmix.nabu.chat.LlamaCppBackend
 import com.mewmix.nabu.chat.LlmRuntimeOverrides
 import com.mewmix.nabu.chat.MediaPipeBackend
@@ -17,6 +19,8 @@ import com.mewmix.nabu.data.ConversationSummary
 import com.mewmix.nabu.data.ConversationTurn
 import com.mewmix.nabu.data.Model
 import com.mewmix.nabu.data.ModelManager
+import com.mewmix.nabu.data.ModelType
+import com.mewmix.nabu.data.OAuthRemoteModels
 import com.mewmix.nabu.kokoro.KokoroEngine
 import com.mewmix.nabu.supertonic.DebugSupertonicEngine
 import com.mewmix.nabu.tts.TTSManager
@@ -57,7 +61,7 @@ class ChatViewModel(
 
     companion object {
         private const val DEFAULT_MAX_CONTEXT_TOKENS = 1024
-        private const val MAX_TOOL_CALLS_PER_TURN = 1
+        private const val MAX_TOOL_CALLS_PER_TURN = 4
         private const val TOOL_EXECUTION_TIMEOUT_MS = 30_000L
         private val TOKEN_REGEX = Regex("\\S+")
     }
@@ -131,7 +135,7 @@ class ChatViewModel(
 
             // Initialize Glaive tools if available
             if (GlaiveBridge.isInstalled(context.applicationContext)) {
-                GlaiveBridge.registerDefaultTools()
+                GlaiveBridge.registerDefaultTools(context.applicationContext)
                 DebugLogger.log("ChatViewModel: Glaive tools registered.")
             }
         }
@@ -156,9 +160,11 @@ class ChatViewModel(
             }
         }
 
-        val downloadedModels = modelManager.models.filter { it.isDownloaded }
-        _availableModels.value = downloadedModels
-        val startingModel = downloadedModels.find { it.id == initialModelId } ?: downloadedModels.firstOrNull()
+        val downloadedModels = modelManager.models.filter { it.isDownloaded && it.type == ModelType.LLM }
+        val remoteModels = OAuthRemoteModels.connectedModels(context)
+        val availableModels = (downloadedModels + remoteModels).distinctBy { it.id }
+        _availableModels.value = availableModels
+        val startingModel = availableModels.find { it.id == initialModelId } ?: availableModels.firstOrNull()
         startingModel?.let { setActiveModel(it, persistConversation = false) }
 
         refreshConversations()
@@ -428,17 +434,18 @@ class ChatViewModel(
                         return@sendMessage
                     }
 
+                    val exhaustedToolBudget = toolCall != null && remainingToolCalls <= 0
                     val shouldFallbackToToolResult = lastToolResult != null && (
                         finalResponse.isBlank() ||
                             toolCall != null ||
                             finalResponse.contains("<tool_call>", ignoreCase = true)
                         )
-                    val resolvedResponse = if (shouldFallbackToToolResult) {
-                        summarizeToolResult(lastToolResult!!)
-                    } else if (finalResponse.isBlank()) {
-                        "No model response generated."
-                    } else {
-                        finalResponse
+                    val resolvedResponse = when {
+                        exhaustedToolBudget && lastToolResult != null -> summarizeToolResult(lastToolResult)
+                        exhaustedToolBudget -> "Tool-call limit reached for this turn."
+                        shouldFallbackToToolResult -> summarizeToolResult(lastToolResult!!)
+                        finalResponse.isBlank() -> "No model response generated."
+                        else -> finalResponse
                     }
 
                     if (benchmarkEnabled) {
@@ -447,7 +454,7 @@ class ChatViewModel(
                     }
                     finalizeAssistantResponse(
                         finalResponse = resolvedResponse,
-                        speakOutput = toolCall == null && !shouldFallbackToToolResult
+                        speakOutput = toolCall == null && !shouldFallbackToToolResult && !exhaustedToolBudget
                     )
                 }
             }
@@ -564,37 +571,49 @@ class ChatViewModel(
         _activeModel.value = model
         llmBackend?.close()
 
-        val taskFile = File(context.filesDir, "models/${model.id}.task")
-        val ggufFile = File(context.filesDir, "models/${model.id}.gguf")
+        when (model.backend) {
+            "codex_oauth" -> {
+                llmBackend = CodexOAuthBackend(context)
+                llmBackend?.initialize()
+            }
+            "gemini_oauth" -> {
+                llmBackend = GeminiOAuthBackend(context)
+                llmBackend?.initialize()
+            }
+            else -> {
+                val taskFile = File(context.filesDir, "models/${model.id}.task")
+                val ggufFile = File(context.filesDir, "models/${model.id}.gguf")
 
-        // Use backend set by ModelManager, or fallback to file existence check
-        val isLlama = model.backend == "llama" || (ggufFile.exists() && !taskFile.exists())
+                // Use backend set by ModelManager, or fallback to file existence check
+                val isLlama = model.backend == "llama" || (ggufFile.exists() && !taskFile.exists())
 
-        if (isLlama) {
-            if (!ggufFile.exists()) {
-                DebugLogger.log("GGUF Model file not found: ${ggufFile.absolutePath}")
-                llmBackend = null
-                return
+                if (isLlama) {
+                    if (!ggufFile.exists()) {
+                        DebugLogger.log("GGUF Model file not found: ${ggufFile.absolutePath}")
+                        llmBackend = null
+                        return
+                    }
+                    val runtimeConfig = SettingsManager.getLlmRuntimeConfig(context, llmOverrides)
+                    val backend = LlamaCppBackend(context, ggufFile.absolutePath, runtimeConfig)
+                    llmBackend = backend
+                    viewModelScope.launch(Dispatchers.IO) {
+                        backend.initialize()
+                    }
+                } else {
+                    if (!taskFile.exists()) {
+                        DebugLogger.log("Task Model file not found: ${taskFile.absolutePath}")
+                        llmBackend = null
+                        return
+                    }
+                    val backend = MediaPipeBackend(
+                        context = context,
+                        modelPath = taskFile.absolutePath,
+                        initialConfig = SettingsManager.getMediaPipeRuntimeConfig(context)
+                    )
+                    backend.initialize()
+                    llmBackend = backend
+                }
             }
-            val runtimeConfig = SettingsManager.getLlmRuntimeConfig(context, llmOverrides)
-            val backend = LlamaCppBackend(context, ggufFile.absolutePath, runtimeConfig)
-            llmBackend = backend
-            viewModelScope.launch(Dispatchers.IO) {
-                backend.initialize()
-            }
-        } else {
-            if (!taskFile.exists()) {
-                DebugLogger.log("Task Model file not found: ${taskFile.absolutePath}")
-                llmBackend = null
-                return
-            }
-            val backend = MediaPipeBackend(
-                context = context,
-                modelPath = taskFile.absolutePath,
-                initialConfig = SettingsManager.getMediaPipeRuntimeConfig(context)
-            )
-            backend.initialize()
-            llmBackend = backend
         }
         if (persistConversation) {
             val conversationId = _activeConversationId.value

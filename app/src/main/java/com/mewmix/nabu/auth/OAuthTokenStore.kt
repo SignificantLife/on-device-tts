@@ -1,6 +1,9 @@
 package com.mewmix.nabu.auth
 
 import android.content.Context
+import android.content.SharedPreferences
+import androidx.security.crypto.EncryptedSharedPreferences
+import androidx.security.crypto.MasterKey
 
 internal object OAuthTokenStore {
     private const val PREFS_NAME = "oauth_token_store"
@@ -32,7 +35,7 @@ internal object OAuthTokenStore {
         val expiresAt = expiresInSeconds?.let { seconds ->
             if (seconds > 0L) now + (seconds * 1000L) else null
         }
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = prefs(context.applicationContext)
         prefs.edit()
             .putString(accessKey(providerId), accessToken)
             .putString(refreshKey(providerId), refreshToken)
@@ -44,7 +47,7 @@ internal object OAuthTokenStore {
     }
 
     fun load(context: Context, providerId: String): Tokens? {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = prefs(context.applicationContext)
         val accessToken = prefs.getString(accessKey(providerId), null)?.trim().orEmpty()
         if (accessToken.isBlank()) return null
 
@@ -60,7 +63,7 @@ internal object OAuthTokenStore {
     }
 
     fun clear(context: Context, providerId: String) {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = prefs(context.applicationContext)
         prefs.edit()
             .remove(accessKey(providerId))
             .remove(refreshKey(providerId))
@@ -77,4 +80,21 @@ internal object OAuthTokenStore {
     private fun accountKey(providerId: String): String = "account_$providerId"
     private fun expiresAtKey(providerId: String): String = "expires_$providerId"
     private fun updatedAtKey(providerId: String): String = "updated_$providerId"
+
+    private fun prefs(context: Context): SharedPreferences {
+        return runCatching {
+            val masterKey = MasterKey.Builder(context)
+                .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
+                .build()
+            EncryptedSharedPreferences.create(
+                context,
+                PREFS_NAME,
+                masterKey,
+                EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
+                EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM
+            )
+        }.getOrElse {
+            context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        }
+    }
 }

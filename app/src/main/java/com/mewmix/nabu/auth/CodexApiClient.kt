@@ -1,6 +1,7 @@
 package com.mewmix.nabu.auth
 
 import android.content.Context
+import com.mewmix.nabu.chat.LlmMessage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -14,28 +15,55 @@ class CodexApiClient(
         prompt: String,
         model: String = "gpt-5.3-codex"
     ): Result<String> {
+        return sendConversation(
+            context = context,
+            conversation = listOf(LlmMessage(role = "user", content = prompt)),
+            model = model
+        )
+    }
+
+    suspend fun sendConversation(
+        context: Context,
+        conversation: List<LlmMessage>,
+        model: String = "gpt-5.3-codex"
+    ): Result<String> {
         val accessToken = authenticator.getValidAccessToken(context)
             ?: return Result.failure(IllegalStateException("Codex account is not authenticated."))
         val accountId = authenticator.getAccountId(context)
 
-        val payload = JSONObject()
-            .put("model", model)
-            .put("store", false)
-            .put(
-                "input",
-                JSONArray().put(
+        val payload = JSONObject().put("model", model).put("store", false)
+        val input = JSONArray()
+        conversation
+            .filter { it.content.isNotBlank() }
+            .forEach { message ->
+                input.put(
                     JSONObject()
-                        .put("role", "user")
+                        .put("role", mapRole(message.role))
                         .put(
                             "content",
                             JSONArray().put(
                                 JSONObject()
                                     .put("type", "input_text")
-                                    .put("text", prompt)
+                                    .put("text", message.content)
                             )
                         )
                 )
+            }
+        if (input.length() == 0) {
+            input.put(
+                JSONObject()
+                    .put("role", "user")
+                    .put(
+                        "content",
+                        JSONArray().put(
+                            JSONObject()
+                                .put("type", "input_text")
+                                .put("text", "Hello")
+                        )
+                    )
             )
+        }
+        payload.put("input", input)
 
         val headers = mutableMapOf(
             "Authorization" to "Bearer $accessToken",
@@ -106,5 +134,13 @@ class CodexApiClient(
             }
         }
         return chunks.joinToString("").trim().ifBlank { null }
+    }
+
+    private fun mapRole(role: String): String {
+        return when (role.lowercase()) {
+            "assistant", "model" -> "assistant"
+            "system" -> "system"
+            else -> "user"
+        }
     }
 }

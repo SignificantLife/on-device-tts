@@ -9,7 +9,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import org.json.JSONObject
 
 class CodexAuthenticator : OAuthManager {
     companion object {
@@ -158,13 +157,16 @@ class CodexAuthenticator : OAuthManager {
         if (!tokens.isExpired()) return tokens.accessToken
         val refreshToken = tokens.refreshToken ?: return null
 
-        val payload = JSONObject()
-            .put("client_id", clientId)
-            .put("grant_type", "refresh_token")
-            .put("refresh_token", refreshToken)
-            .put("scope", "openid profile email")
         val refreshed = withContext(Dispatchers.IO) {
-            OAuthHttpClient.postJson(tokenUrl, payload)
+            OAuthHttpClient.postForm(
+                url = tokenUrl,
+                fields = mapOf(
+                    "client_id" to clientId,
+                    "grant_type" to "refresh_token",
+                    "refresh_token" to refreshToken,
+                    "scope" to "openid profile email offline_access"
+                )
+            )
         }
         return refreshed.fold(
             onSuccess = { json ->

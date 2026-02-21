@@ -6,6 +6,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
+import org.junit.Assume.assumeFalse
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Test
@@ -20,7 +21,7 @@ class ToolCallRoundTripInstrumentedTest {
             val context = ApplicationProvider.getApplicationContext<Context>()
             val malformedModelOutput = """
                 ```json
-                {name":"list_files",arguments={"path": "/"}}
+                {name":"list_files",arguments={"path": "/sdcard"}}
                 ```
             """.trimIndent()
 
@@ -31,6 +32,10 @@ class ToolCallRoundTripInstrumentedTest {
                 GlaiveBridge.executeTool(context, call!!)
             }
 
+            assumeFalse(
+                "Skipping because Glaive all-files access is not granted on device",
+                result.output.contains("All files access", ignoreCase = true)
+            )
             assertFalse("Tool execution failed: ${result.output}", result.isError)
             JSONArray(result.output)
         }

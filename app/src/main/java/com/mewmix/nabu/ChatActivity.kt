@@ -12,6 +12,8 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
 import com.mewmix.nabu.data.ModelManager
 import com.mewmix.nabu.data.Model
+import com.mewmix.nabu.data.ModelType
+import com.mewmix.nabu.data.OAuthRemoteModels
 import com.mewmix.nabu.screens.ChatScreen
 import com.mewmix.nabu.utils.OnnxRuntimeManager
 import com.mewmix.nabu.utils.DebugLogger
@@ -66,9 +68,11 @@ class ChatActivity : ComponentActivity() {
 
         lifecycleScope.launch {
             val modelManager = ModelManager(applicationContext)
-            val downloaded = modelManager.models.filter { it.isDownloaded && it.type != com.mewmix.nabu.data.ModelType.TTS }
+            val downloaded = modelManager.models.filter { it.isDownloaded && it.type == ModelType.LLM }
+            val remote = OAuthRemoteModels.connectedModels(applicationContext)
+            val available = (downloaded + remote).distinctBy { it.id }
 
-            if (downloaded.isEmpty()) {
+            if (available.isEmpty()) {
                 Toast.makeText(
                     this@ChatActivity,
                     "No chat models downloaded. Redirecting to model page.",
@@ -83,10 +87,10 @@ class ChatActivity : ComponentActivity() {
                 return@launch
             }
 
-            if (downloaded.size == 1) {
-                startChat(downloaded.first(), initialPrompt)
+            if (available.size == 1) {
+                startChat(available.first(), initialPrompt)
             } else {
-                selectModel(downloaded, initialPrompt)
+                selectModel(available, initialPrompt)
             }
         }
     }

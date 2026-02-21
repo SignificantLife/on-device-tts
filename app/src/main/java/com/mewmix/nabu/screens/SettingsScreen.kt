@@ -99,6 +99,7 @@ fun SettingsScreen(
     val codexClient = remember { CodexApiClient(codexAuth) }
     var geminiOAuthClientId by remember { mutableStateOf(SettingsManager.getGeminiOAuthClientId(context)) }
     var geminiOAuthRedirectUri by remember { mutableStateOf(SettingsManager.getGeminiOAuthRedirectUri(context)) }
+    var geminiOAuthProjectId by remember { mutableStateOf(SettingsManager.getGeminiOAuthProjectId(context)) }
     var geminiConnected by remember { mutableStateOf(geminiAuth.hasStoredSession(context)) }
     var codexConnected by remember { mutableStateOf(codexAuth.hasStoredSession(context)) }
     var testingGemini by remember { mutableStateOf(false) }
@@ -518,8 +519,23 @@ fun SettingsScreen(
                     geminiOAuthRedirectUri = value
                     SettingsManager.setGeminiOAuthRedirectUri(context, value)
                 },
-                label = { Text("Gemini Redirect URI") },
+                label = { Text("Gemini Redirect URI (optional)") },
                 modifier = Modifier.fillMaxWidth()
+            )
+
+            TextField(
+                value = geminiOAuthProjectId,
+                onValueChange = { value ->
+                    geminiOAuthProjectId = value
+                    SettingsManager.setGeminiOAuthProjectId(context, value)
+                },
+                label = { Text("Gemini Billing Project ID (optional)") },
+                modifier = Modifier.fillMaxWidth()
+            )
+
+            Text(
+                text = "Tip: keep Redirect URI as nabu://auth/callback/google to use secure loopback PKCE automatically.",
+                style = MaterialTheme.typography.bodySmall
             )
 
             Text(

@@ -8,6 +8,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.json.JSONArray
+import org.junit.Assume.assumeFalse
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -51,11 +52,15 @@ class GlaiveBridgeInstrumentedTest {
                     context = context,
                     call = ToolCall(
                         toolName = "list_files",
-                        arguments = mapOf("path" to "/")
+                        arguments = mapOf("path" to "/sdcard")
                     )
                 )
             }
 
+            assumeFalse(
+                "Skipping because Glaive all-files access is not granted on device",
+                result.output.contains("All files access", ignoreCase = true)
+            )
             assertFalse("Tool call failed: ${result.output}", result.isError)
             JSONArray(result.output)
         }

@@ -39,6 +39,7 @@ object SettingsManager {
     private const val KEY_API_LAN_ENABLED = "api_lan_enabled"
     private const val KEY_GEMINI_OAUTH_CLIENT_ID = "gemini_oauth_client_id"
     private const val KEY_GEMINI_OAUTH_REDIRECT_URI = "gemini_oauth_redirect_uri"
+    private const val KEY_GEMINI_OAUTH_PROJECT_ID = "gemini_oauth_project_id"
 
     fun setDebug(context: Context, enabled: Boolean) {
         DatabaseManager.setSetting(context, "debug", if (enabled) "1" else "0")
@@ -136,6 +137,13 @@ object SettingsManager {
         val value = DatabaseManager.getSetting(context, KEY_GEMINI_OAUTH_REDIRECT_URI).orEmpty().trim()
         return if (value.isBlank()) default else value
     }
+
+    fun setGeminiOAuthProjectId(context: Context, projectId: String) {
+        DatabaseManager.setSetting(context, KEY_GEMINI_OAUTH_PROJECT_ID, projectId.trim())
+    }
+
+    fun getGeminiOAuthProjectId(context: Context): String =
+        DatabaseManager.getSetting(context, KEY_GEMINI_OAUTH_PROJECT_ID).orEmpty().trim()
 
     fun setInitComplete(context: Context, complete: Boolean) {
         DatabaseManager.setSetting(context, KEY_INIT_COMPLETE, if (complete) "1" else "0")

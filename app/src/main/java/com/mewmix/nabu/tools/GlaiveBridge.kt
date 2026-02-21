@@ -8,6 +8,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.ResultReceiver
+import android.net.Uri
+import android.database.Cursor
 import org.json.JSONObject
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.coroutines.resume
@@ -101,52 +103,12 @@ object GlaiveBridge {
     }
 
     // Stub to register default file manager tools if Glaive is detected
-    fun registerDefaultTools() {
-        ToolRegistry.register(
-            Tool(
-                name = "list_files",
-                description = "List files in a directory.",
-                parameters = mapOf("path" to "The directory path to list.")
-            )
-        )
-        ToolRegistry.register(
-            Tool(
-                name = "read_file",
-                description = "Read the content of a text file.",
-                parameters = mapOf("path" to "The file path to read.")
-            )
-        )
-        ToolRegistry.register(
-            Tool(
-                name = "write_file",
-                description = "Write content to a file.",
-                parameters = mapOf("path" to "The file path.", "content" to "The text content.")
-            )
-        )
-        ToolRegistry.register(
-            Tool(
-                name = "create_dir",
-                description = "Create a directory path recursively.",
-                parameters = mapOf("path" to "The directory path to create.")
-            )
-        )
-        ToolRegistry.register(
-            Tool(
-                name = "delete_file",
-                description = "Delete a file or directory recursively.",
-                parameters = mapOf("path" to "The file or directory path to delete.")
-            )
-        )
-        ToolRegistry.register(
-            Tool(
-                name = "search_files",
-                description = "Search files under a root path by query string.",
-                parameters = mapOf(
-                    "root_path" to "Root directory to search under.",
-                    "query" to "Name fragment or search query."
-                )
-            )
-        )
+    fun registerDefaultTools(context: Context? = null) {
+        val discoveredTools = context?.let { discoverTools(it.applicationContext) }.orEmpty()
+        val toolsToRegister = if (discoveredTools.isNotEmpty()) discoveredTools else fallbackTools()
+        toolsToRegister.forEach { tool ->
+            ToolRegistry.register(tool)
+        }
     }
 
     internal fun createExecutionIntent(toolName: String, toolParamsJson: String?): Intent {
@@ -177,5 +139,94 @@ object GlaiveBridge {
 
     private fun hasBridgePermission(context: Context): Boolean {
         return context.checkSelfPermission(GLAIVE_ACCESS_PERMISSION) == PackageManager.PERMISSION_GRANTED
+    }
+
+    private fun discoverTools(context: Context): List<Tool> {
+        val uri = Uri.parse("content://com.mewmix.glaive.tool_provider")
+        return runCatching {
+            context.contentResolver.query(uri, null, null, null, null).use { cursor ->
+                readToolsFromCursor(cursor)
+            }
+        }.getOrElse { error ->
+            DebugLogger.log("GlaiveBridge: Failed to discover tools from provider: ${error.message}")
+            emptyList()
+        }
+    }
+
+    private fun readToolsFromCursor(cursor: Cursor?): List<Tool> {
+        if (cursor == null) return emptyList()
+        val nameIndex = cursor.getColumnIndex("name")
+        val descriptionIndex = cursor.getColumnIndex("description")
+        val parametersIndex = cursor.getColumnIndex("parameters")
+        if (nameIndex < 0 || descriptionIndex < 0 || parametersIndex < 0) {
+            return emptyList()
+        }
+
+        val tools = mutableListOf<Tool>()
+        while (cursor.moveToNext()) {
+            val name = cursor.getString(nameIndex)?.trim().orEmpty()
+            if (name.isBlank()) continue
+            val description = cursor.getString(descriptionIndex)?.trim().orEmpty()
+            val parameterJson = cursor.getString(parametersIndex).orEmpty()
+            val parameters = parseParameters(parameterJson)
+            tools += Tool(
+                name = name,
+                description = if (description.isBlank()) "Tool provided by Glaive." else description,
+                parameters = parameters
+            )
+        }
+        return tools
+    }
+
+    private fun parseParameters(rawJson: String): Map<String, String> {
+        if (rawJson.isBlank()) return emptyMap()
+        return runCatching {
+            val json = JSONObject(rawJson)
+            val map = linkedMapOf<String, String>()
+            val keys = json.keys()
+            while (keys.hasNext()) {
+                val key = keys.next()
+                map[key] = json.optString(key).ifBlank { "string" }
+            }
+            map.toMap()
+        }.getOrDefault(emptyMap())
+    }
+
+    private fun fallbackTools(): List<Tool> {
+        return listOf(
+            Tool(
+                name = "list_files",
+                description = "List files in a directory.",
+                parameters = mapOf("path" to "The directory path to list.")
+            ),
+            Tool(
+                name = "read_file",
+                description = "Read the content of a text file.",
+                parameters = mapOf("path" to "The file path to read.")
+            ),
+            Tool(
+                name = "write_file",
+                description = "Write content to a file.",
+                parameters = mapOf("path" to "The file path.", "content" to "The text content.")
+            ),
+            Tool(
+                name = "create_dir",
+                description = "Create a directory path recursively.",
+                parameters = mapOf("path" to "The directory path to create.")
+            ),
+            Tool(
+                name = "delete_file",
+                description = "Delete a file or directory recursively.",
+                parameters = mapOf("path" to "The file or directory path to delete.")
+            ),
+            Tool(
+                name = "search_files",
+                description = "Search files under a root path by query string.",
+                parameters = mapOf(
+                    "root_path" to "Root directory to search under.",
+                    "query" to "Name fragment or search query."
+                )
+            )
+        )
     }
 }
