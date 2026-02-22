@@ -80,18 +80,15 @@ class CodexApiClient(
                     toolsArray.put(
                         JSONObject()
                             .put("type", "function")
+                            .put("name", tool.name)
+                            .put("description", tool.description)
+                            .put("strict", false)
                             .put(
-                                "function",
+                                "parameters",
                                 JSONObject()
-                                    .put("name", tool.name)
-                                    .put("description", tool.description)
-                                    .put(
-                                        "parameters",
-                                        JSONObject()
-                                            .put("type", "object")
-                                            .put("properties", props)
-                                            .put("required", JSONArray(tool.parameters.keys))
-                                    )
+                                    .put("type", "object")
+                                    .put("properties", props)
+                                    .put("required", JSONArray(tool.parameters.keys))
                             )
                     )
                 }
