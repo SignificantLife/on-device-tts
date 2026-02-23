@@ -131,15 +131,13 @@ Nabu intercepts the system tool prompts, parses `<tool_call>` outputs efficientl
 
 #### Glaive File Manager & Local Tools
 
-If you install the **[Glaive File Manager](https://github.com/mewmix/glaive)** alongside Nabu, you can grant Nabu direct tool calling capabilities over the Android device's file system. This allows external scripts to command Nabu or Glaive to list directories, read files, and manage external storage directly from the LLM context.
-
-Glaive acts as a secure local tool provider, expanding Nabu's capabilities beyond simple chat into an autonomous on-device file management agent.
+If you install the **[Glaive File Manager](https://github.com/mewmix/glaive)** alongside Nabu, you can grant Nabu direct tool calling capabilities over the Android device's file system. This allows in app or external providers to command Nabu or Glaive to list directories, read files, and manage external storage directly from the LLM context.
 
 ### Experimental Codex OAuth
 
-Nabu includes experimental support for connecting to a remote Codex LLM via OAuth. This allows Nabu to stream high-capacity model responses seamlessly into the local TTS loop or chat UI.
+Nabu includes experimental support for connecting to Codex model family via OAuth.
 
-- You can authenticate with Codex directly from the Nabu UI.
+- You can authenticate with Codex directly from settings.
 - Once authenticated, Codex models will appear in the `Remote` tab of the model selector.
 - These remote models fully support the OpenCode and Open Interpreter API tooling workflows just like the local models.
 

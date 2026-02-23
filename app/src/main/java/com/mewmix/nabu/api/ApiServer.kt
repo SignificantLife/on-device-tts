@@ -611,12 +611,10 @@ class ApiServer(
                             is StreamEvent.Token -> {
                                 finalText += event.chunk
                                 
-                                // To avoid streaming out raw `<tool_call>` XML tags to OpenCode clients,
-                                // we try to suppress content chunks if we detect we're inside a tool call.
-                                // It string matches, so if it's emitting a tool call, we simply buffer it.
-                                val isToolCallBlock = finalText.contains("<tool_call>") && !finalText.contains("</tool_call>")
-                                
-                                if (!isToolCallBlock && !finalText.trim().startsWith("<tool_call>")) {
+                                // To avoid streaming out raw tool call tags or JSON blocks to OpenCode clients,
+                                // we suppress content chunks if the accumulated text matches patterns
+                                // that typically start a tool call.
+                                if (!shouldSuppressToken(finalText)) {
                                     writeSseData(
                                         JSONObject()
                                             .put("id", responseId)
@@ -1648,6 +1646,26 @@ class ApiServer(
             )
         }
         return parsedTools
+    }
+
+    private fun shouldSuppressToken(text: String): Boolean {
+        val trimmed = text.trim()
+        if (trimmed.isEmpty()) return false
+
+        // 1. Tagged tool call: <tool_call>...
+        if (trimmed.startsWith("<tool_call")) return true
+        if (text.contains("<tool_call>") && !text.contains("</tool_call>")) return true
+
+        // 2. Fenced JSON: ```json ... ```
+        if (trimmed.startsWith("```")) return true
+        if (text.contains("```") && text.indexOf("```") == text.lastIndexOf("```")) return true
+
+        // 3. Raw JSON: { "name": ... }
+        // We suppress if it looks like it's starting a JSON object but hasn't closed it yet,
+        // unless it's clearly just conversational text that happens to have a brace.
+        if (trimmed.startsWith("{") && !trimmed.contains("\n\n") && !trimmed.contains("}")) return true
+
+        return false
     }
 
     private data class TtsRequestTarget(
