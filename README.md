@@ -129,9 +129,19 @@ Nabu fully supports the OpenAI `tools` specification for agentic function callin
 
 Nabu intercepts the system tool prompts, parses `<tool_call>` outputs efficiently, and maps them to standard JSON `{"finish_reason": "tool_calls"}` stream chunks.
 
-#### Android Device Manipulation via Glaive
+#### Glaive File Manager & Local Tools
 
-If you install the **[Glaive Plugin](https://github.com/mewmix/glaive)** alongside Nabu, you can grant Nabu direct accessibility and shell powers over the Android device. This allows external scripts to not just run Python, but actually command Nabu to dump the phone's UI (`dump_ui_hierarchy`), click buttons (`click_ui_node`), or fetch foreground apps (`get_foreground_app`).
+If you install the **[Glaive File Manager](https://github.com/mewmix/glaive)** alongside Nabu, you can grant Nabu direct tool calling capabilities over the Android device's file system. This allows external scripts to command Nabu or Glaive to list directories, read files, and manage external storage directly from the LLM context.
+
+Glaive acts as a secure local tool provider, expanding Nabu's capabilities beyond simple chat into an autonomous on-device file management agent.
+
+### Experimental Codex OAuth
+
+Nabu includes experimental support for connecting to a remote Codex LLM via OAuth. This allows Nabu to stream high-capacity model responses seamlessly into the local TTS loop or chat UI.
+
+- You can authenticate with Codex directly from the Nabu UI.
+- Once authenticated, Codex models will appear in the `Remote` tab of the model selector.
+- These remote models fully support the OpenCode and Open Interpreter API tooling workflows just like the local models.
 
 ### Health
 
