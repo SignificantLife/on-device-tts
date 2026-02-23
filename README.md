@@ -113,7 +113,7 @@ Unknown/other file types fall back to plain text extraction.
 
 ## Local API Server
 
-Nabu includes an opt-in local REST API server for on-device inference.
+Nabu includes an opt-in local REST API server for on-device inference, exposing both text-to-speech and an OpenAI-compatible `/v1/chat/completions` endpoint.
 
 - Default bind: `127.0.0.1:8455`
 - Optional LAN bind: `0.0.0.0:8455` (enable in Settings)
@@ -122,6 +122,16 @@ Nabu includes an opt-in local REST API server for on-device inference.
 Enable it from Settings:
 - `Enable API Server`
 - `Expose API on LAN` (optional)
+
+### Agentic Tool Calling (OpenCode & Open Interpreter)
+
+Nabu fully supports the OpenAI `tools` specification for agentic function calling over its local API. You can direct robust tooling environments like OpenCode and [Open Interpreter](https://github.com/OpenInterpreter/open-interpreter) to use Nabu as their LLM backend.
+
+Nabu intercepts the system tool prompts, parses `<tool_call>` outputs efficiently, and maps them to standard JSON `{"finish_reason": "tool_calls"}` stream chunks.
+
+#### Android Device Manipulation via Glaive
+
+If you install the **[Glaive Plugin](https://github.com/mewmix/glaive)** alongside Nabu, you can grant Nabu direct accessibility and shell powers over the Android device. This allows external scripts to not just run Python, but actually command Nabu to dump the phone's UI (`dump_ui_hierarchy`), click buttons (`click_ui_node`), or fetch foreground apps (`get_foreground_app`).
 
 ### Health
 
@@ -135,52 +145,46 @@ Returns:
 
 ### Model Listing
 
-- `GET /models`
-- `POST /models`
-- `GET /v1/models`
-- `POST /v1/models`
+Endpoint paths for checking loaded/downloaded resources:
+- `GET /models` (Returns Nabu internal format)
+- `GET /v1/models` (Returns standard OpenAI model list JSON footprint)
 - `GET /tts/models`
 - `GET /v1/tts/models`
 
-Filters:
-- `type=llm|tts|all` query for `GET /models` and `GET /v1/models`
-- `{ "type": "llm|tts|all" }` JSON body for `POST /models` and `POST /v1/models`
-- Defaults: `llm` when no filter is provided
+Query by type: `?type=llm|tts|all`
 
 ### LLM Generation
 
-- `POST /generate`
+- `POST /generate` (Nabu flat object payload)
 - `POST /v1/chat/completions` (OpenAI-compatible shape)
 
-`POST /generate` expects either `prompt` or `messages`:
-
-```json
-{
-  "model": "gemma3-1b-it-q4",
-  "prompt": "Summarize this paragraph in two sentences."
-}
-```
-
-Optional streaming:
-- Set `"stream": true` to receive Server-Sent Events (SSE)
-- Each event is sent as `data: <json>` and terminates with `data: [DONE]`
-
-`POST /v1/chat/completions` expects `messages`:
+`POST /v1/chat/completions` expects `messages` and optionally `tools`:
 
 ```json
 {
   "model": "gemma3-1b-it-q4",
   "messages": [
-    {"role": "user", "content": "Hello from local API"}
+    {"role": "user", "content": "What is the weather?"}
   ],
-  "stream": false
+  "tools": [{
+    "type": "function",
+    "function": {
+      "name": "get_weather",
+      "description": "Get weather for a location",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "location": { "type": "string" }
+        },
+        "required": ["location"]
+      }
+    }
+  }],
+  "stream": true
 }
 ```
 
-`/v1/chat/completions` streaming follows OpenAI-style chunk events:
-- `Content-Type: text/event-stream`
-- `data: {...chat.completion.chunk...}`
-- final `data: [DONE]`
+Streaming `/v1/chat/completions` follows OpenAI-style SSE chunk events yielding `delta.content` strings, or `delta.tool_calls` JSON buffers, ending in `data: [DONE]`.
 
 ### TTS Generation
 
@@ -198,60 +202,47 @@ Request fields:
 `response_format: "wav"` returns `audio/wav` bytes.  
 `response_format: "json"` returns base64-encoded WAV plus metadata.
 
-### Error Shape
-
-Errors are returned as:
-
-```json
-{
-  "error": {
-    "message": "Human-readable message",
-    "type": "api_error"
-  }
-}
-```
+---
 
 ### Curl Examples
 
-Health:
+#### ADB Port Forwarding
 
+To test the API locally from your host machine over USB/WiFi:
+```bash
+adb forward tcp:8455 tcp:8455
+```
+
+#### Health Check
 ```bash
 curl http://127.0.0.1:8455/health
 ```
 
-List only TTS models:
-
+#### List Available LLMs (OpenAI Format)
 ```bash
-curl "http://127.0.0.1:8455/models?type=tts"
+curl "http://127.0.0.1:8455/v1/models?type=llm"
 ```
 
-Generate TTS WAV:
-
+#### Generate TTS WAV to File
 ```bash
-curl -X POST "http://127.0.0.1:8455/tts/speech" \
+curl -s -X POST "http://127.0.0.1:8455/v1/audio/speech" \
   -H "Content-Type: application/json" \
-  -d '{"input":"do not be alarmed i am simply testing the update for alex","engine":"soprano","response_format":"wav"}' \
-  --output out.wav
+  -d '{"input":"Welcome to Nabu on device AI","engine":"kokoro","response_format":"wav"}' \
+  --output test_speech.wav
 ```
 
-Generate TTS JSON (base64 audio):
-
+#### Simple OpenAI Chat Completion
 ```bash
-curl -X POST "http://127.0.0.1:8455/v1/audio/speech" \
+curl -X POST "http://127.0.0.1:8455/v1/chat/completions" \
   -H "Content-Type: application/json" \
-  -d '{"input":"test line","engine":"soprano","response_format":"json"}'
+  -d '{
+    "model":"gemma3-1b-it-q4",
+    "messages":[{"role":"user","content":"Name three fast animals."}],
+    "stream":false
+  }'
 ```
 
-Stream `/generate`:
-
-```bash
-curl -N -X POST "http://127.0.0.1:8455/generate" \
-  -H "Content-Type: application/json" \
-  -d '{"model":"gemma3-1b-it-q4","prompt":"List three planets.","stream":true}'
-```
-
-Stream `/v1/chat/completions`:
-
+#### Stream OpenAI Chat Completion
 ```bash
 curl -N -X POST "http://127.0.0.1:8455/v1/chat/completions" \
   -H "Content-Type: application/json" \
@@ -259,6 +250,35 @@ curl -N -X POST "http://127.0.0.1:8455/v1/chat/completions" \
     "model":"gemma3-1b-it-q4",
     "messages":[{"role":"user","content":"Say hello in five words."}],
     "stream":true
+  }'
+```
+
+#### Send OpenCode Tool Call Request
+```bash
+curl -X POST "http://127.0.0.1:8455/v1/chat/completions" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "gemma3-1b-it-q4",
+    "messages": [
+      { "role": "user", "content": "What is 55 times 12?" }
+    ],
+    "tools": [
+      {
+        "type": "function",
+        "function": {
+          "name": "multiply",
+          "description": "Multiply two numbers",
+          "parameters": {
+            "type": "object",
+            "properties": {
+              "a": { "type": "number" },
+              "b": { "type": "number" }
+            }
+          }
+        }
+      }
+    ],
+    "stream": false
   }'
 ```
 
