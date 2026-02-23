@@ -355,6 +355,7 @@ class ApiServer(
             val stream = body.optBoolean("stream", false)
             val replyTts = parseReplyTtsRequest(body)
 
+            val parsedTools = parseTools(body)
             val requestedModel = body.optString("model").ifBlank { null }
             val messageArray = body.optJSONArray("messages")
             if (messageArray == null || messageArray.length() == 0) {
@@ -366,7 +367,7 @@ class ApiServer(
                 return
             }
 
-            val parsedMessages = parseMessages(messageArray)
+            val parsedMessages = parseMessages(messageArray, parsedTools)
             if (stream && replyTts != null) {
                 respondApiError(
                     call = call,
@@ -389,20 +390,40 @@ class ApiServer(
 
             val choice = JSONObject()
                 .put("index", 0)
-                .put(
+
+            val toolCallInfo = com.mewmix.nabu.tools.ToolCallProtocol.extractToolCall(generation.text)
+            if (toolCallInfo != null) {
+                val toolCallId = "call_${System.currentTimeMillis()}"
+                val toolCallJson = JSONObject()
+                    .put("id", toolCallId)
+                    .put("type", "function")
+                    .put("function", JSONObject()
+                        .put("name", toolCallInfo.toolName)
+                        .put("arguments", com.google.gson.Gson().toJson(toolCallInfo.arguments))
+                    )
+                    
+                val responseMessage = JSONObject()
+                    .put("role", "assistant")
+                    .put("content", JSONObject.NULL)
+                    .put("tool_calls", JSONArray().put(toolCallJson as Any))
+                choice.put("message", responseMessage)
+                choice.put("finish_reason", "tool_calls")
+            } else {
+                choice.put(
                     "message",
                     JSONObject()
                         .put("role", "assistant")
                         .put("content", generation.text)
                 )
-                .put("finish_reason", "stop")
+                choice.put("finish_reason", "stop")
+            }
 
             val response = JSONObject()
                 .put("id", "chatcmpl-${System.currentTimeMillis()}")
                 .put("object", "chat.completion")
                 .put("created", nowSeconds)
                 .put("model", generation.modelId)
-                .put("choices", JSONArray().put(choice))
+                .put("choices", JSONArray().put(choice as Any))
                 .put(
                     "usage",
                     JSONObject()
@@ -582,45 +603,126 @@ class ApiServer(
                             .toString()
                     )
 
+                    var finalText = ""
+                    val protocol = com.mewmix.nabu.tools.ToolCallProtocol
+
                     for (event in stream) {
                         when (event) {
                             is StreamEvent.Token -> {
-                                writeSseData(
-                                    JSONObject()
-                                        .put("id", responseId)
-                                        .put("object", "chat.completion.chunk")
-                                        .put("created", created)
-                                        .put("model", modelId)
-                                        .put(
-                                            "choices",
-                                            JSONArray().put(
-                                                JSONObject()
-                                                    .put("index", 0)
-                                                    .put("delta", JSONObject().put("content", event.chunk))
-                                                    .put("finish_reason", JSONObject.NULL)
+                                finalText += event.chunk
+                                
+                                // To avoid streaming out raw `<tool_call>` XML tags to OpenCode clients,
+                                // we try to suppress content chunks if we detect we're inside a tool call.
+                                // It string matches, so if it's emitting a tool call, we simply buffer it.
+                                val isToolCallBlock = finalText.contains("<tool_call>") && !finalText.contains("</tool_call>")
+                                
+                                if (!isToolCallBlock && !finalText.trim().startsWith("<tool_call>")) {
+                                    writeSseData(
+                                        JSONObject()
+                                            .put("id", responseId)
+                                            .put("object", "chat.completion.chunk")
+                                            .put("created", created)
+                                            .put("model", modelId)
+                                            .put(
+                                                "choices",
+                                                JSONArray().put(
+                                                    JSONObject()
+                                                        .put("index", 0)
+                                                        .put("delta", JSONObject().put("content", event.chunk))
+                                                        .put("finish_reason", JSONObject.NULL)
+                                                )
                                             )
-                                        )
-                                        .toString()
-                                )
+                                            .toString()
+                                    )
+                                }
                             }
                             StreamEvent.Done -> {
-                                writeSseData(
-                                    JSONObject()
-                                        .put("id", responseId)
-                                        .put("object", "chat.completion.chunk")
-                                        .put("created", created)
-                                        .put("model", modelId)
-                                        .put(
-                                            "choices",
-                                            JSONArray().put(
-                                                JSONObject()
-                                                    .put("index", 0)
-                                                    .put("delta", JSONObject())
-                                                    .put("finish_reason", "stop")
-                                            )
+                                val toolCallInfo = com.mewmix.nabu.tools.ToolCallProtocol.extractToolCall(finalText)
+                                if (toolCallInfo != null) {
+                                    val toolCallId = "call_${System.currentTimeMillis()}"
+                                    // According to OpenAI stream spec, first tool delta provides id/type/name
+                                    val firstToolDelta = JSONObject()
+                                        .put("index", 0)
+                                        .put("id", toolCallId)
+                                        .put("type", "function")
+                                        .put("function", JSONObject()
+                                            .put("name", toolCallInfo.toolName)
+                                            .put("arguments", "")
                                         )
-                                        .toString()
-                                )
+                                        
+                                    val firstChoice = JSONObject()
+                                        .put("index", 0)
+                                        .put("delta", JSONObject()
+                                            .put("tool_calls", JSONArray().put(firstToolDelta as Any))
+                                        )
+                                        .put("finish_reason", JSONObject.NULL)
+
+                                    writeSseData(
+                                        JSONObject()
+                                            .put("id", responseId)
+                                            .put("object", "chat.completion.chunk")
+                                            .put("created", created)
+                                            .put("model", modelId)
+                                            .put("choices", JSONArray().put(firstChoice as Any)).toString()
+                                    )
+                                    
+                                    // Second delta provides the arguments payload
+                                    val secondToolDelta = JSONObject()
+                                        .put("index", 0)
+                                        .put("function", JSONObject()
+                                            .put("arguments", com.google.gson.Gson().toJson(toolCallInfo.arguments))
+                                        )
+                                        
+                                    val secondChoice = JSONObject()
+                                        .put("index", 0)
+                                        .put("delta", JSONObject()
+                                            .put("tool_calls", JSONArray().put(secondToolDelta as Any))
+                                        )
+                                        .put("finish_reason", JSONObject.NULL)
+
+                                    writeSseData(
+                                        JSONObject()
+                                            .put("id", responseId)
+                                            .put("object", "chat.completion.chunk")
+                                            .put("created", created)
+                                            .put("model", modelId)
+                                            .put("choices", JSONArray().put(secondChoice as Any)).toString()
+                                    )
+                                    
+                                    // Final chunk signals tool_calls finish reason
+                                    val finalChoice = JSONObject()
+                                        .put("index", 0)
+                                        .put("delta", JSONObject())
+                                        .put("finish_reason", "tool_calls")
+                                        
+                                    writeSseData(
+                                        JSONObject()
+                                            .put("id", responseId)
+                                            .put("object", "chat.completion.chunk")
+                                            .put("created", created)
+                                            .put("model", modelId)
+                                            .put("choices", JSONArray().put(finalChoice as Any)).toString()
+                                    )
+                                } else {
+                                    // Standard close
+                                    val stdCloseChoice = JSONObject()
+                                        .put("index", 0)
+                                        .put("delta", JSONObject())
+                                        .put("finish_reason", "stop")
+                                        
+                                    writeSseData(
+                                        JSONObject()
+                                            .put("id", responseId)
+                                            .put("object", "chat.completion.chunk")
+                                            .put("created", created)
+                                            .put("model", modelId)
+                                            .put(
+                                                "choices",
+                                                JSONArray().put(stdCloseChoice as Any)
+                                            )
+                                            .toString()
+                                    )
+                                }
                                 writeSseDone()
                             }
                         }
@@ -928,9 +1030,15 @@ class ApiServer(
         }
     }
 
-    private fun parseMessages(input: JSONArray): ParsedMessages {
+    private fun parseMessages(input: JSONArray, tools: List<com.mewmix.nabu.tools.Tool> = emptyList()): ParsedMessages {
         val messages = mutableListOf<LlmMessage>()
         var image: LlmImageInput? = null
+
+        val systemPromptBuilder = StringBuilder()
+        if (tools.isNotEmpty()) {
+            val protocol = com.mewmix.nabu.tools.ToolCallProtocol
+            systemPromptBuilder.append(protocol.buildSystemPrompt("", tools)).append("\n\n")
+        }
 
         for (i in 0 until input.length()) {
             val item = input.optJSONObject(i) ?: continue
@@ -938,6 +1046,13 @@ class ApiServer(
             if (rawRole.isEmpty()) continue
             val role = when (rawRole.lowercase()) {
                 "assistant" -> "model"
+                "system" -> {
+                    val parsed = parseMessageContent(item, "system")
+                    if (parsed.content.isNotEmpty()) {
+                        systemPromptBuilder.append(parsed.content).append("\n\n")
+                    }
+                    continue
+                }
                 else -> rawRole.lowercase()
             }
 
@@ -953,10 +1068,15 @@ class ApiServer(
             }
         }
 
+        val systemPrompt = systemPromptBuilder.toString().trim()
+        if (systemPrompt.isNotEmpty()) {
+            messages.add(0, LlmMessage(role = "system", content = systemPrompt))
+        }
+
         if (messages.isEmpty()) {
             throw IllegalArgumentException("'messages' must include at least one non-empty content entry.")
         }
-        return ParsedMessages(messages = messages, image = image)
+        return ParsedMessages(messages = messages, image = image, tools = tools)
     }
 
     private fun parseMessageContent(item: JSONObject, role: String): ParsedMessageContent {
@@ -1478,13 +1598,57 @@ class ApiServer(
 
     private data class ParsedMessages(
         val messages: List<LlmMessage>,
-        val image: LlmImageInput?
+        val image: LlmImageInput?,
+        val tools: List<com.mewmix.nabu.tools.Tool> = emptyList()
     )
 
     private data class ParsedMessageContent(
         val content: String,
         val image: LlmImageInput?
     )
+
+    private fun parseTools(body: JSONObject): List<com.mewmix.nabu.tools.Tool> {
+        val toolsArray = body.optJSONArray("tools") ?: return emptyList()
+        val parsedTools = mutableListOf<com.mewmix.nabu.tools.Tool>()
+
+        for (i in 0 until toolsArray.length()) {
+            val toolItem = toolsArray.optJSONObject(i) ?: continue
+            if (toolItem.optString("type") != "function") continue
+            val functionObj = toolItem.optJSONObject("function") ?: continue
+
+            val name = functionObj.optString("name")
+            val description = functionObj.optString("description", "")
+            if (name.isBlank()) continue
+
+            val parameters = mutableMapOf<String, String>()
+            val paramsObj = functionObj.optJSONObject("parameters")
+            if (paramsObj != null) {
+                val propertiesObj = paramsObj.optJSONObject("properties")
+                if (propertiesObj != null) {
+                    val keys = propertiesObj.keys()
+                    while (keys.hasNext()) {
+                        val key = keys.next()
+                        val prop = propertiesObj.optJSONObject(key)
+                        if (prop != null) {
+                            val type = prop.optString("type", "string")
+                            val desc = prop.optString("description", "")
+                            parameters[key] = "($type) $desc".trim()
+                        }
+                    }
+                }
+            }
+
+            parsedTools.add(
+                com.mewmix.nabu.tools.Tool(
+                    name = name,
+                    description = description,
+                    parameters = parameters,
+                    isAvailable = true
+                )
+            )
+        }
+        return parsedTools
+    }
 
     private data class TtsRequestTarget(
         val engine: String,

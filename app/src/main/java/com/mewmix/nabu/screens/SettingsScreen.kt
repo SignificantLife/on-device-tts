@@ -37,9 +37,7 @@ import com.mewmix.nabu.utils.OnnxRuntimeManager
 import com.mewmix.nabu.utils.UpdateChecker
 import com.mewmix.nabu.utils.getAppVersion
 import com.mewmix.nabu.api.ApiServerManager
-import com.mewmix.nabu.auth.GeminiAuthenticator
 import com.mewmix.nabu.auth.CodexAuthenticator
-import com.mewmix.nabu.auth.GeminiApiClient
 import com.mewmix.nabu.auth.CodexApiClient
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -97,18 +95,10 @@ fun SettingsScreen(
     var updateStatus by remember { mutableStateOf(UpdateChecker.cachedStatus(context)) }
     var checkingForUpdate by remember { mutableStateOf(false) }
     var updateError by remember { mutableStateOf<String?>(null) }
-    val geminiAuth = remember { GeminiAuthenticator() }
     val codexAuth = remember { CodexAuthenticator() }
-    val geminiClient = remember { GeminiApiClient(geminiAuth) }
     val codexClient = remember { CodexApiClient(codexAuth) }
-    var geminiOAuthClientId by remember { mutableStateOf(SettingsManager.getGeminiOAuthClientId(context)) }
-    var geminiOAuthRedirectUri by remember { mutableStateOf(SettingsManager.getGeminiOAuthRedirectUri(context)) }
-    var geminiOAuthProjectId by remember { mutableStateOf(SettingsManager.getGeminiOAuthProjectId(context)) }
-    var geminiConnected by remember { mutableStateOf(geminiAuth.hasStoredSession(context)) }
     var codexConnected by remember { mutableStateOf(codexAuth.hasStoredSession(context)) }
-    var testingGemini by remember { mutableStateOf(false) }
     var testingCodex by remember { mutableStateOf(false) }
-    var geminiStatus by remember { mutableStateOf<String?>(null) }
     var codexStatus by remember { mutableStateOf<String?>(null) }
     val lifecycleOwner = LocalLifecycleOwner.current
 
@@ -125,13 +115,11 @@ fun SettingsScreen(
     }
     LaunchedEffect(Unit) {
         updateStatus = withContext(Dispatchers.IO) { UpdateChecker.cachedStatus(context) }
-        geminiConnected = geminiAuth.hasStoredSession(context.applicationContext)
         codexConnected = codexAuth.hasStoredSession(context.applicationContext)
     }
     DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                geminiConnected = geminiAuth.hasStoredSession(context.applicationContext)
                 codexConnected = codexAuth.hasStoredSession(context.applicationContext)
             }
         }
@@ -519,100 +507,6 @@ fun SettingsScreen(
                 text = "Integrations (Experimental)",
                 style = MaterialTheme.typography.titleMedium
             )
-
-            TextField(
-                value = geminiOAuthClientId,
-                onValueChange = { value ->
-                    geminiOAuthClientId = value
-                    SettingsManager.setGeminiOAuthClientId(context, value)
-                },
-                label = { Text("Gemini OAuth Client ID") },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            TextField(
-                value = geminiOAuthRedirectUri,
-                onValueChange = { value ->
-                    geminiOAuthRedirectUri = value
-                    SettingsManager.setGeminiOAuthRedirectUri(context, value)
-                },
-                label = { Text("Gemini Redirect URI (optional)") },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            TextField(
-                value = geminiOAuthProjectId,
-                onValueChange = { value ->
-                    geminiOAuthProjectId = value
-                    SettingsManager.setGeminiOAuthProjectId(context, value)
-                },
-                label = { Text("Gemini Billing Project ID (optional)") },
-                modifier = Modifier.fillMaxWidth()
-            )
-
-            Text(
-                text = "Tip: keep Redirect URI as nabu://auth/callback/google to use secure loopback PKCE automatically.",
-                style = MaterialTheme.typography.bodySmall
-            )
-
-            Text(
-                text = if (geminiConnected) "Gemini: Connected" else "Gemini: Not connected",
-                style = MaterialTheme.typography.bodySmall
-            )
-            Button(
-                onClick = {
-                    if (geminiOAuthClientId.isBlank()) {
-                        geminiStatus = "Gemini OAuth Client ID is required."
-                    } else {
-                        geminiAuth.initiateLogin(context)
-                    }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (geminiConnected) "Reconnect Gemini Account" else "Connect Gemini Account")
-            }
-
-            Button(
-                onClick = {
-                    scope.launch {
-                        testingGemini = true
-                        geminiStatus = null
-                        val result = geminiClient.sendPrompt(
-                            context = context.applicationContext,
-                            prompt = "Reply with: Gemini connection OK."
-                        )
-                        geminiStatus = result.fold(
-                            onSuccess = { "Gemini response: $it" },
-                            onFailure = { "Gemini call failed: ${it.message}" }
-                        )
-                        geminiConnected = geminiAuth.hasStoredSession(context.applicationContext)
-                        testingGemini = false
-                    }
-                },
-                enabled = geminiConnected && !testingGemini,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(if (testingGemini) "Testing Gemini..." else "Test Gemini Call")
-            }
-
-            Button(
-                onClick = {
-                    geminiAuth.logout(context.applicationContext)
-                    geminiConnected = false
-                    geminiStatus = "Gemini disconnected."
-                },
-                enabled = geminiConnected,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Disconnect Gemini")
-            }
-            geminiStatus?.let { status ->
-                Text(
-                    text = status,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurface
-                )
-            }
 
             Text(
                 text = if (codexConnected) "Codex: Connected" else "Codex: Not connected",

@@ -7,7 +7,6 @@ import androidx.lifecycle.viewModelScope
 import com.mewmix.nabu.chat.ChatMessage
 import com.mewmix.nabu.chat.LlmBackend
 import com.mewmix.nabu.chat.CodexOAuthBackend
-import com.mewmix.nabu.chat.GeminiOAuthBackend
 import com.mewmix.nabu.chat.LlamaCppBackend
 import com.mewmix.nabu.chat.LlmRuntimeOverrides
 import com.mewmix.nabu.chat.MediaPipeBackend
@@ -46,6 +45,8 @@ import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -129,6 +130,14 @@ class ChatViewModel(
     private var dropQueuedAudio = false
     private var lineIndex = 0
 
+    private val ttsMutex = kotlinx.coroutines.sync.Mutex()
+
+    fun refreshAvailableModels() {
+        val downloadedModels = modelManager.models.filter { it.isDownloaded && it.type == ModelType.LLM }
+        val remoteModels = OAuthRemoteModels.connectedModels(context)
+        _availableModels.value = (downloadedModels + remoteModels).distinctBy { it.id }
+    }
+
     init {
         viewModelScope.launch(Dispatchers.IO) {
             OnnxRuntimeManager.initialize(context.applicationContext)
@@ -160,11 +169,9 @@ class ChatViewModel(
             }
         }
 
-        val downloadedModels = modelManager.models.filter { it.isDownloaded && it.type == ModelType.LLM }
-        val remoteModels = OAuthRemoteModels.connectedModels(context)
-        val availableModels = (downloadedModels + remoteModels).distinctBy { it.id }
-        _availableModels.value = availableModels
-        val startingModel = availableModels.find { it.id == initialModelId } ?: availableModels.firstOrNull()
+        refreshAvailableModels()
+        
+        val startingModel = _availableModels.value.find { it.id == initialModelId } ?: _availableModels.value.firstOrNull()
         startingModel?.let { setActiveModel(it, persistConversation = false) }
 
         refreshConversations()
@@ -581,17 +588,6 @@ class ChatViewModel(
                 )
                 llmBackend?.initialize()
             }
-            OAuthRemoteModels.Provider.GEMINI -> {
-                llmBackend = GeminiOAuthBackend(
-                    context = context,
-                    model = remoteSelection.modelSlug
-                )
-                DebugLogger.log(
-                    "ChatViewModel: selected remote model provider=gemini model=${remoteSelection.modelSlug} " +
-                        "endpoint=generativelanguage.googleapis.com/v1beta/models/*:generateContent"
-                )
-                llmBackend?.initialize()
-            }
             null -> {
                 val taskFile = File(context.filesDir, "models/${model.id}.task")
                 val ggufFile = File(context.filesDir, "models/${model.id}.gguf")
@@ -792,55 +788,57 @@ class ChatViewModel(
                 }
                 DebugLogger.log("Synthesizing: ${text}")
                 val audioData = withContext(Dispatchers.IO) {
-                    val engine = TTSManager.getEngine(context, modelManager)
-                        ?: throw IllegalStateException("No TTS engine available")
+                    ttsMutex.withLock {
+                        val engine = TTSManager.getEngine(context, modelManager)
+                            ?: throw IllegalStateException("No TTS engine available")
 
-                    val ttsStart = SystemClock.elapsedRealtime()
+                        val ttsStart = SystemClock.elapsedRealtime()
 
-                    val realEngine = if (engine is com.mewmix.nabu.tts.BenchmarkingTTSEngine) engine.delegate else engine
+                        val realEngine = if (engine is com.mewmix.nabu.tts.BenchmarkingTTSEngine) engine.delegate else engine
 
-                    if (realEngine is KokoroEngine) {
-                        DebugLogger.log("ChatViewModel: Using KokoroEngine. Phonemizing '$text'...")
-                    } else {
-                        DebugLogger.log("ChatViewModel: Using ${realEngine.name}. Synthesizing '$text'...")
-                    }
-
-                    val (data, sampleRate) = if (realEngine is KokoroEngine) {
-                        val mixedVector = mixStyles(
-                            styleLoader,
-                            _selectedStyles.value,
-                            _weights.value,
-                            _interpolationMode.value
-                        )
-                        val phonemes = phonemeConverter.phonemize(text)
-                        DebugLogger.log("ChatViewModel: Phonemes generated: $phonemes")
-
-                        createAudioFromStyleVector(
-                            phonemes = phonemes,
-                            voice = mixedVector,
-                            speed = _speed.value,
-                            engine = realEngine
-                        )
-                    } else {
-                        // For Supertonic or other engines, use the interface directly
-                        // Note: Supertonic does its own text normalization/phonemization internally or via TextProcessor
-                        if (realEngine is DebugSupertonicEngine) {
-                            val styleName = _selectedStyles.value.firstOrNull() ?: "F1"
-                            DebugLogger.log("ChatViewModel: Setting Supertonic style to '$styleName'")
-                            realEngine.setStyle(styleName)
+                        if (realEngine is KokoroEngine) {
+                            DebugLogger.log("ChatViewModel: Using KokoroEngine. Phonemizing '$text'...")
+                        } else {
+                            DebugLogger.log("ChatViewModel: Using ${realEngine.name}. Synthesizing '$text'...")
                         }
-                        val result = engine.synthesize(text, _speed.value)
-                        result.wav to result.sampleRate
-                    }
 
-                    val genMs = SystemClock.elapsedRealtime() - ttsStart
-                    if (benchmark) {
-                        val audioMs = data.size * 1000L / sampleRate
-                        // Note: Benchmark might need adjustment for Supertonic details
-                        BenchmarkManager.recordTts(OnnxRuntimeManager.currentBundle(), genMs, audioMs)
-                        BenchmarkManager.profileSystem(context)
+                        val (data, sampleRate) = if (realEngine is KokoroEngine) {
+                            val mixedVector = mixStyles(
+                                styleLoader,
+                                _selectedStyles.value,
+                                _weights.value,
+                                _interpolationMode.value
+                            )
+                            val phonemes = phonemeConverter.phonemize(text)
+                            DebugLogger.log("ChatViewModel: Phonemes generated: $phonemes")
+
+                            createAudioFromStyleVector(
+                                phonemes = phonemes,
+                                voice = mixedVector,
+                                speed = _speed.value,
+                                engine = realEngine
+                            )
+                        } else {
+                            // For Supertonic or other engines, use the interface directly
+                            // Note: Supertonic does its own text normalization/phonemization internally or via TextProcessor
+                            if (realEngine is DebugSupertonicEngine) {
+                                val styleName = _selectedStyles.value.firstOrNull() ?: "F1"
+                                DebugLogger.log("ChatViewModel: Setting Supertonic style to '$styleName'")
+                                realEngine.setStyle(styleName)
+                            }
+                            val result = engine.synthesize(text, _speed.value)
+                            result.wav to result.sampleRate
+                        }
+
+                        val genMs = SystemClock.elapsedRealtime() - ttsStart
+                        if (benchmark) {
+                            val audioMs = data.size * 1000L / sampleRate
+                            // Note: Benchmark might need adjustment for Supertonic details
+                            BenchmarkManager.recordTts(OnnxRuntimeManager.currentBundle(), genMs, audioMs)
+                            BenchmarkManager.profileSystem(context)
+                        }
+                        QueuedAudio(currentIndex, data, sampleRate)
                     }
-                    QueuedAudio(currentIndex, data, sampleRate)
                 }
                 if (!dropQueuedAudio) {
                     audioQueue.send(audioData)

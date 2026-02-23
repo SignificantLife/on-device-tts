@@ -215,18 +215,18 @@ object SopranoTextNormalizer {
     private fun expandAbbreviations(text: String): String {
         var t = text
         for ((pattern, replacement) in ABBREVIATIONS + CASED_ABBREVIATIONS) {
-            t = pattern.matcher(t).replaceAll(replacement)
+            t = pattern.toRegex().replace(t, replacement)
         }
         return t
     }
 
     private fun normalizeNumbers(text: String): String {
         var t = text
-        t = NUM_PREFIX_RE.matcher(t).replaceAll("number $1")
+        t = NUM_PREFIX_RE.toRegex().replace(t, "number $1")
 
-        t = NUM_SUFFIX_RE.matcher(t).replaceAll { match ->
-            val num = match.group(1)
-            val suffix = match.group(2)?.lowercase()
+        t = NUM_SUFFIX_RE.toRegex().replace(t) { match ->
+            val num = match.groups[1]?.value
+            val suffix = match.groups[2]?.value?.lowercase()
             val word = when (suffix) {
                 "k" -> "thousand"
                 "m" -> "million"
@@ -238,43 +238,43 @@ object SopranoTextNormalizer {
         }
 
         repeat(2) {
-            t = NUM_LETTER_SPLIT_RE.matcher(t).replaceAll { match ->
-                val d1 = match.group(1)
-                val l1 = match.group(2)
-                val l2 = match.group(3)
-                val d2 = match.group(4)
+            t = NUM_LETTER_SPLIT_RE.toRegex().replace(t) { match ->
+                val d1 = match.groups[1]?.value
+                val l1 = match.groups[2]?.value
+                val l2 = match.groups[3]?.value
+                val d2 = match.groups[4]?.value
                 if (d1 != null && l1 != null) "$d1 $l1"
                 else if (l2 != null && d2 != null) "$l2 $d2"
-                else match.group(0)
+                else match.value
             }
         }
 
-        t = COMMA_NUMBER_RE.matcher(t).replaceAll { it.group(1).replace(",", "") }
+        t = COMMA_NUMBER_RE.toRegex().replace(t) { it.groups[1]!!.value.replace(",", "") }
 
-        t = DATE_RE.matcher(t).replaceAll { match ->
-            val pre = match.group(1)
-            val date = match.group(2)
-            val post = match.group(3)
+        t = DATE_RE.toRegex().replace(t) { match ->
+            val pre = match.groups[1]?.value ?: ""
+            val date = match.groups[2]?.value ?: ""
+            val post = match.groups[3]?.value ?: ""
             val parts = date.split(Regex("[./-]"))
             pre + parts.joinToString(" dash ") + post
         }
 
-        t = PHONE_NUMBER_RE.matcher(t).replaceAll { match ->
-            val digits = match.group(0).replace(Regex("\\D"), "")
+        t = PHONE_NUMBER_RE.toRegex().replace(t) { match ->
+            val digits = match.value.replace(Regex("\\D"), "")
             if (digits.length == 10) {
                 "${digits.substring(0, 3).map { "$it" }.joinToString(" ")}, ${digits.substring(3, 6).map { "$it" }.joinToString(" ")}, ${digits.substring(6).map { "$it" }.joinToString(" ")}"
             } else {
-                match.group(0)
+                match.value
             }
         }
 
-        t = TIME_RE.matcher(t).replaceAll { match ->
-            val hours = match.group(1)
-            val minutes = match.group(2)
-            val seconds = match.group(3)
+        t = TIME_RE.toRegex().replace(t) { match ->
+            val hours = match.groups[1]?.value ?: ""
+            val minutes = match.groups[2]?.value ?: ""
+            val seconds = match.groups[3]?.value
 
-            val h = hours.toInt()
-            val m = minutes.toInt()
+            val h = hours.toIntOrNull() ?: 0
+            val m = minutes.toIntOrNull() ?: 0
             if (seconds == null) {
                 if (m == 0) {
                     if (h == 0) "0"
@@ -286,7 +286,7 @@ object SopranoTextNormalizer {
                     "$hours $minutes"
                 }
             } else {
-                val s = seconds.toInt()
+                val s = seconds.toIntOrNull() ?: 0
                 val minStr = if (m == 0) "oh oh" else if (minutes.startsWith("0")) "oh ${minutes[1]}" else minutes
                 val secStr = if (s == 0) "" else if (seconds.startsWith("0")) "oh ${seconds[1]}" else seconds
 
@@ -300,12 +300,12 @@ object SopranoTextNormalizer {
             }
         }
 
-        t = POUNDS_RE.matcher(t).replaceAll { match ->
-            match.group(1).replace(",", "") + " pounds"
+        t = POUNDS_RE.toRegex().replace(t) { match ->
+            (match.groups[1]?.value?.replace(",", "") ?: "") + " pounds"
         }
 
-        t = DOLLARS_RE.matcher(t).replaceAll { match ->
-            val amount = match.group(1).replace(",", "")
+        t = DOLLARS_RE.toRegex().replace(t) { match ->
+            val amount = match.groups[1]?.value?.replace(",", "") ?: "0"
             val parts = amount.split(".")
             val dollars = parts[0].toLongOrNull() ?: 0L
             val cents = if (parts.size > 1) parts[1].toLongOrNull() ?: 0L else 0L
@@ -321,28 +321,30 @@ object SopranoTextNormalizer {
             }
         }
 
-        t = DECIMAL_NUMBER_RE.matcher(t).replaceAll { match ->
-            val parts = match.group(1).split(".")
-            parts[0] + " point " + parts.drop(1).joinToString(" point ") { it.map { c -> "$c" }.joinToString(" ") }
+        t = DECIMAL_NUMBER_RE.toRegex().replace(t) { match ->
+            val parts = match.groups[1]?.value?.split(".") ?: emptyList()
+            if (parts.isNotEmpty()) {
+                parts[0] + " point " + parts.drop(1).joinToString(" point ") { it.map { c -> "$c" }.joinToString(" ") }
+            } else match.value
         }
 
-        t = MULTIPLY_RE.matcher(t).replaceAll("$1 times $2")
-        t = DIVIDE_RE.matcher(t).replaceAll("$1 over $2")
-        t = ADD_RE.matcher(t).replaceAll("$1 plus $2")
-        t = SUBTRACT_RE.matcher(t).replaceAll { match ->
-            val a = match.group(1) ?: ""
-            val b = match.group(2)
+        t = MULTIPLY_RE.toRegex().replace(t, "$1 times $2")
+        t = DIVIDE_RE.toRegex().replace(t, "$1 over $2")
+        t = ADD_RE.toRegex().replace(t, "$1 plus $2")
+        t = SUBTRACT_RE.toRegex().replace(t) { match ->
+            val a = match.groups[1]?.value ?: ""
+            val b = match.groups[2]?.value ?: ""
             "$a minus $b"
         }
 
-        t = FRACTION_RE.matcher(t).replaceAll("$1 over $2")
+        t = FRACTION_RE.toRegex().replace(t, "$1 over $2")
 
-        t = ORDINAL_RE.matcher(t).replaceAll { match ->
-            ordinalToWords(match.group(1).toLong())
+        t = ORDINAL_RE.toRegex().replace(t) { match ->
+            ordinalToWords(match.groups[1]?.value?.toLongOrNull() ?: 0L)
         }
 
-        t = NUMBER_RE.matcher(t).replaceAll { match ->
-            val num = match.group(0).toLongOrNull() ?: 0L
+        t = NUMBER_RE.toRegex().replace(t) { match ->
+            val num = match.value.toLongOrNull() ?: 0L
             if (num > 1000 && num < 3000) {
                 if (num == 2000L) "two thousand"
                 else if (num > 2000 && num < 2010) "two thousand " + numberToWords(num % 100)
@@ -357,12 +359,12 @@ object SopranoTextNormalizer {
 
     private fun normalizeSpecial(text: String): String {
         var t = text
-        t = LINK_HEADER_RE.matcher(t).replaceAll("h t t p s colon slash slash ")
-        t = DASH_RE.matcher(t).replaceAll("$1, $2")
-        t = DOT_RE.matcher(t).replaceAll("$1 dot $2")
-        t = PARENTHESES_RE.matcher(t).replaceAll { match ->
-            val after = match.group(1)
-            var result = match.group(0).replace(Regex("[\\(\\[\\{]"), ", ").replace(Regex("[\\)\\]\\}]"), ", ")
+        t = LINK_HEADER_RE.toRegex().replace(t, "h t t p s colon slash slash ")
+        t = DASH_RE.toRegex().replace(t, "$1, $2")
+        t = DOT_RE.toRegex().replace(t, "$1 dot $2")
+        t = PARENTHESES_RE.toRegex().replace(t) { match ->
+            val after = match.groups[1]?.value
+            var result = match.value.replace(Regex("[\\(\\[\\{]"), ", ").replace(Regex("[\\)\\]\\}]"), ", ")
             if (after != null && after.matches(Regex("[$.!?,]"))) {
                 result = result.substring(0, result.length - 2) + after
             }
@@ -374,7 +376,7 @@ object SopranoTextNormalizer {
     private fun expandSpecialCharacters(text: String): String {
         var t = text
         for ((pattern, replacement) in SPECIAL_CHARACTERS) {
-            t = pattern.matcher(t).replaceAll(replacement)
+            t = pattern.toRegex().replace(t, replacement)
         }
         return t
     }

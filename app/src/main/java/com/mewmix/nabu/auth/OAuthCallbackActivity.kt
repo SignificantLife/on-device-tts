@@ -27,7 +27,6 @@ class OAuthCallbackActivity : ComponentActivity() {
             var handled = false
             if (data != null) {
                 when (resolveProvider(data)) {
-                    "google" -> handled = GeminiAuthenticator().handleCallback(this@OAuthCallbackActivity, intent)
                     "codex" -> handled = CodexAuthenticator().handleCallback(this@OAuthCallbackActivity, intent)
                     else -> DebugLogger.log("OAuthCallbackActivity: Ignoring unsupported callback URI: $data")
                 }
@@ -55,7 +54,7 @@ class OAuthCallbackActivity : ComponentActivity() {
     private fun resolveProvider(uri: Uri): String? {
         if (uri.scheme != "nabu" || uri.host != "auth") return null
         uri.getQueryParameter("provider")?.let { provider ->
-            if (provider == "google" || provider == "codex") return provider
+            if (provider == "codex") return provider
         }
         val segments = uri.pathSegments
         if (segments.isEmpty()) return null

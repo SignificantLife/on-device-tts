@@ -263,7 +263,7 @@ class CodexApiClient(
                         input.put(
                             JSONObject()
                                 .put("type", "function_call")
-                                .put("id", callId)
+                                .put("call_id", callId)
                                 .put("name", name)
                                 .put("arguments", args)
                         )
@@ -275,26 +275,28 @@ class CodexApiClient(
                     }
                 } else {
                     userInputCount += 1
-                    val trMatch = "<tool_call_result>.*?<name>(.*?)</name>.*?<output>(.*?)</output>.*?</tool_call_result>"
-                        .toRegex(RegexOption.DOT_MATCHES_ALL).find(textContent)
+                    if (textContent.startsWith("TOOL_RESULT ")) {
+                        val jsonText = textContent.removePrefix("TOOL_RESULT ").trim()
+                        val resultJson = runCatching { JSONObject(jsonText) }.getOrNull()
+                        if (resultJson != null) {
+                            val name = resultJson.optString("tool", "unknown")
+                            val outputText = resultJson.optString("output", "")
+                            val callId = "call_${name.hashCode()}"
 
-                    if (trMatch != null) {
-                        val name = trMatch.groupValues[1].trim()
-                        val outputText = trMatch.groupValues[2].trim()
-                        val callId = "call_${name.hashCode()}"
-
-                        input.put(
-                            JSONObject()
-                                .put("type", "function_call_output")
-                                .put("call_id", callId)
-                                .put("output", outputText)
-                        )
-                    } else {
-                        input.put(
-                            JSONObject().put("type", "message").put("role", "user")
-                                .put("content", JSONArray().put(JSONObject().put("type", "input_text").put("text", textContent)))
-                        )
+                            input.put(
+                                JSONObject()
+                                    .put("type", "function_call_output")
+                                    .put("call_id", callId)
+                                    .put("output", outputText)
+                            )
+                            return@forEach
+                        }
                     }
+                    
+                    input.put(
+                        JSONObject().put("type", "message").put("role", "user")
+                            .put("content", JSONArray().put(JSONObject().put("type", "input_text").put("text", textContent)))
+                    )
                 }
             }
 
