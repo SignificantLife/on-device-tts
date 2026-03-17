@@ -39,6 +39,7 @@ object SettingsManager {
     private const val KEY_METHOD_TRACING = "method_tracing"
     private const val KEY_API_ENABLED = "api_enabled"
     private const val KEY_API_LAN_ENABLED = "api_lan_enabled"
+    private const val KEY_API_BACKGROUND_ENABLED = "api_background_enabled"
     private const val KEY_GEMINI_OAUTH_CLIENT_ID = "gemini_oauth_client_id"
     private const val KEY_GEMINI_OAUTH_REDIRECT_URI = "gemini_oauth_redirect_uri"
     private const val KEY_GEMINI_OAUTH_PROJECT_ID = "gemini_oauth_project_id"
@@ -90,6 +91,15 @@ object SettingsManager {
     fun isApiLanEnabled(context: Context, default: Boolean = false): Boolean {
         val fallback = if (default) "1" else "0"
         return (DatabaseManager.getSetting(context, KEY_API_LAN_ENABLED) ?: fallback) == "1"
+    }
+
+    fun setApiBackgroundEnabled(context: Context, enabled: Boolean) {
+        DatabaseManager.setSetting(context, KEY_API_BACKGROUND_ENABLED, if (enabled) "1" else "0")
+    }
+
+    fun isApiBackgroundEnabled(context: Context, default: Boolean = false): Boolean {
+        val fallback = if (default) "1" else "0"
+        return (DatabaseManager.getSetting(context, KEY_API_BACKGROUND_ENABLED) ?: fallback) == "1"
     }
 
     fun setStyle(context: Context, style: String) {
