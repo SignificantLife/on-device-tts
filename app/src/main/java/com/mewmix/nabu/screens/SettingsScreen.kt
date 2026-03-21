@@ -37,6 +37,7 @@ import com.mewmix.nabu.utils.OnnxRuntimeManager
 import com.mewmix.nabu.utils.UpdateChecker
 import com.mewmix.nabu.utils.getAppVersion
 import com.mewmix.nabu.api.ApiServerManager
+import com.mewmix.nabu.api.ApiServerRuntime
 import com.mewmix.nabu.auth.CodexAuthenticator
 import com.mewmix.nabu.auth.CodexApiClient
 import kotlinx.coroutines.Dispatchers
@@ -66,6 +67,7 @@ fun SettingsScreen(
     var methodTracing by remember { mutableStateOf(SettingsManager.isMethodTracingEnabled(context)) }
     var apiEnabled by remember { mutableStateOf(SettingsManager.isApiEnabled(context)) }
     var apiLanEnabled by remember { mutableStateOf(SettingsManager.isApiLanEnabled(context)) }
+    var apiBackgroundEnabled by remember { mutableStateOf(SettingsManager.isApiBackgroundEnabled(context)) }
     var runtime by remember { mutableStateOf(SettingsManager.getRuntimePreference(context)) }
     val storedTtsEngine = SettingsManager.getTtsEngine(context)
     var ttsEngine by remember { mutableStateOf(storedTtsEngine) }
@@ -178,7 +180,7 @@ fun SettingsScreen(
                 onToggle = { enabled ->
                     apiEnabled = enabled
                     SettingsManager.setApiEnabled(context, enabled)
-                    ApiServerManager.syncWithSettings(context.applicationContext)
+                    ApiServerRuntime.syncWithSettings(context.applicationContext)
                 },
                 label = "Local API Server"
             )
@@ -188,10 +190,28 @@ fun SettingsScreen(
                 onToggle = { enabled ->
                     apiLanEnabled = enabled
                     SettingsManager.setApiLanEnabled(context, enabled)
-                    ApiServerManager.syncWithSettings(context.applicationContext)
+                    ApiServerRuntime.syncWithSettings(context.applicationContext)
                 },
                 label = "Expose API on LAN"
             )
+
+            SwitchToggle(
+                checked = apiBackgroundEnabled,
+                onToggle = { enabled ->
+                    apiBackgroundEnabled = enabled
+                    SettingsManager.setApiBackgroundEnabled(context, enabled)
+                    ApiServerRuntime.syncWithSettings(context.applicationContext)
+                },
+                label = "Keep API running in background"
+            )
+
+            if (apiBackgroundEnabled) {
+                Text(
+                    text = "Background mode keeps a persistent notification and may use more battery.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
 
             if (apiEnabled) {
                 val host = ApiServerManager.currentHost() ?: ApiServerManager.configuredHost(context.applicationContext)

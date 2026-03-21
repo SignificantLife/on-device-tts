@@ -12,6 +12,8 @@ import com.mewmix.nabu.screens.DebugLogScreen
 import com.mewmix.nabu.screens.CreditsConstellationScreen
 import com.mewmix.nabu.galleryport.PerfHud
 import com.mewmix.nabu.api.ApiServerManager
+import com.mewmix.nabu.api.ApiServerBackgroundService
+import com.mewmix.nabu.api.ApiServerRuntime
 import android.app.Application
 import android.content.Context
 import android.content.Intent
@@ -130,10 +132,11 @@ class MyApplication : Application() {
         UpdateChecker.schedulePeriodicChecks(this)
         UpdateChecker.enqueueStartupCheck(this)
 
-        ApiServerManager.syncWithSettings(this)
+        ApiServerRuntime.syncWithSettings(this)
     }
 
     override fun onTerminate() {
+        ApiServerBackgroundService.stop(this)
         ApiServerManager.stop()
         super.onTerminate()
     }
