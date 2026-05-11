@@ -5,42 +5,20 @@ Nabu is an on-device test bench for TTS and chat:
 - On-device LLM chat with LiteRT `.task` models (MediaPipe runtime) and experimental `.gguf` support via `llama.cpp`
 - E-reader and long-form playback workflows
 
-## Fork Status and Major Changes
+## About This Fork
 
-This repository is a heavily extended fork/continuation of the original Android Kokoro/Nabu codebase. The current branch turns the app from a Kokoro-focused TTS demo into an on-device AI playground that combines TTS, local LLM chat, audiobook playback, model management, and an OpenAI-compatible local API.
+The upstream [Nabu](https://github.com/mewmix/nabu) project is an Android app for local/on-device TTS experiments, local LLM chat, and long-form reading/playback workflows.
 
-Major additions in this fork include:
+This repository is a fork of that original Nabu codebase. It keeps the upstream GPL-3.0 license and credits, while focusing on a more practical Chinese reading and playback experience.
 
-- Multi-engine TTS: Kokoro, Supertonic v1/v2, and Soprano ONNX engines with runtime switching, model readiness checks, engine-specific mixer controls, and shared download/progress handling.
-- Local LLM workbench: managed LiteRT `.task` models, manual `.gguf` import, a `llama.cpp` JNI backend, MediaPipe/LiteRT routing, streaming generation, cancellation, and backend-specific settings.
-- OpenAI-compatible local API: opt-in REST server with `/v1/chat/completions`, `/v1/audio/speech`, `/v1/models`, SSE streaming, LAN binding, health checks, and background keepalive mode.
-- Agentic tooling: OpenAI `tools` schema handling, tool-call streaming, OpenCode/Open Interpreter compatibility, Glaive bridge integration, Android storage tool permissions, and remote OAuth-backed provider experiments.
-- Reader and audiobook workflow: EPUB/PDF/TXT ingestion, editable EPUB flow, structured playback units, bookmarks, saved project state, pre-generated per-line WAV cache, async prefetch, audio focus, notifications, and immersive reader controls.
-- Persistence and UX: SQLite-backed conversations/projects/audio cache, persisted chat prompts and voice mix favorites, model download reconciliation, update checks, F-Droid/release build setup, and a custom brutalist/Quicksand UI with waveform visualizers.
+Main changes in this fork:
 
-Development history highlights from the commit log:
+- Refined the Chinese-facing frontend and app screens for daily reading/listening use.
+- Improved Chinese text playback flow so longer Chinese content plays more smoothly.
+- Polished reader, chat, and TTS interactions around the existing on-device model workflow.
+- Kept the single Android app structure, with supporting modules for chat/LLM and shared UI utilities.
 
-- Aug 2025: added chat TTS controls, raw text phonemization, live PCM/radial visualizers, local LLM import, benchmark HUD, app splash/logo polish, and the first full brutalist UI pass.
-- Aug-Sep 2025: added book/playback panels, structured `PlayableUnit` playback, EPUB paragraph preservation, async TTS prefetch, notification actions, book-to-chat prompt handoff, and persistent conversations.
-- Oct 2025: added EPUB editing tools, storage access framework saving, immersive reader mode, app version surfacing, update checks, and playback/reader polish.
-- Dec 2025-Jan 2026: integrated Supertonic v1/v2, added model selection/init flows, renamed the package for F-Droid readiness, added release/signing workflows, and refactored LLM backends for MediaPipe plus `llama.cpp`.
-- Feb-Mar 2026: integrated Soprano, unified model downloading, added the local REST/OpenAI API server, SSE streaming, TTS API endpoints, ask-image/LLM reply TTS support, Glaive/tool-calling bridge support, Codex OAuth experiments, and API background keepalive.
-
-See the git history for the full implementation trail.
-
-## Demo Video
-
-- [Watch the demo video](https://github.com/user-attachments/assets/43d1b910-8453-4471-8d85-78144c8b9914)
-
-## Screenshots
-
-<p align="center">
-<img src="https://github.com/user-attachments/assets/fa7e8816-41f4-48eb-83c3-29aac0f98251" alt="Mixer" loading="lazy" />
-<img src="https://github.com/user-attachments/assets/882237cc-1c0f-40d7-bdb0-2a528846ae32" alt="Conversation Settings" loading="lazy" />
-<img src="https://github.com/user-attachments/assets/a34eda22-09a9-4d29-9e26-9ab9208eb3eb" alt="Settings" loading="lazy" />
-<img src="https://github.com/user-attachments/assets/da19d300-2a05-4f2b-9b49-0cc0547aa79f" alt="Basic Screen" loading="lazy" />
-</p>
-
+Updated screenshots and demo video are coming soon.
 
 ## Playground Workflows
 
