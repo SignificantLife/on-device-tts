@@ -13,8 +13,8 @@ This repository is a fork of that original Nabu codebase. It keeps the upstream 
 
 Main changes in this fork:
 
-- Refined the Chinese-facing frontend and app screens for daily reading/listening use.
-- Improved Chinese text playback flow so longer Chinese content plays more smoothly.
+- Refined the Chinese-aware TTS frontend for daily reading/listening use.
+- Improved Chinese punctuation normalization, text chunking, and long-form playback flow.
 - Polished reader, chat, and TTS interactions around the existing on-device model workflow.
 - Kept the single Android app structure, with supporting modules for chat/LLM and shared UI utilities.
 
